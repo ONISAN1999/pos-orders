@@ -1,0 +1,44 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.messespos.app'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.messespos.app"
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+
+    // ลายเซ็นคงที่ — ติดตั้งทับเวอร์ชันเดิมได้เลย
+    signingConfigs {
+        fixed {
+            storeFile file('pos.keystore')
+            storePassword 'posbf2026'
+            keyAlias 'pos'
+            keyPassword 'posbf2026'
+        }
+    }
+
+    buildTypes {
+        debug {
+            minifyEnabled false
+            signingConfig signingConfigs.fixed
+        }
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.fixed
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies { }
