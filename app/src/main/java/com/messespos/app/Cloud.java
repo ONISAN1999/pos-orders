@@ -38,7 +38,13 @@ public class Cloud {
         return c.getSharedPreferences(PREF, Context.MODE_PRIVATE);
     }
 
-    public static String dbUrl(Context c) { return prefs(c).getString(K_URL, "").trim(); }
+    /** ลิงก์ฐานข้อมูลของร้าน (ฝังมากับแอป — ไม่ต้องตั้งค่า) */
+    public static final String DEFAULT_URL = "https://gungpao-bangfan-default-rtdb.asia-southeast1.firebasedatabase.app";
+
+    public static String dbUrl(Context c) {
+        String u = prefs(c).getString(K_URL, "").trim();
+        return u.isEmpty() ? DEFAULT_URL : u;
+    }
     public static String shop(Context c)  { return prefs(c).getString(K_SHOP, "bangfan").trim(); }
 
     public static void save(Context c, String url, String shopCode) {
