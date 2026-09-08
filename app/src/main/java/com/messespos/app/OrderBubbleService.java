@@ -283,35 +283,63 @@ public class OrderBubbleService extends Service {
         target.setScaleX(1f); target.setScaleY(1f);
     }
 
-    /** วางฟองย่อยเป็นวงรอบฟองแม่ */
+    /** วางฟองย่อยเป็นวงรอบฟองแม่ — เลือกเฉพาะมุมที่ยังอยู่ในจอ ไม่ให้ฟองทับกันแม้ฟองแม่อยู่ชิดขอบ */
     private void layoutChildren() {
         int n = childViews.size();
         if (n == 0) return;
         int mainS = dp(this, MAIN_DP), childS = dp(this, CHILD_WIN);
         int cx = mainParams.x + mainS / 2;
         int cy = mainParams.y + mainS / 2;
-
         DisplayMetrics dm = getResources().getDisplayMetrics();
-        int perRing = 8;
+        int W = dm.widthPixels, H = dm.heightPixels;
+        int maxX = W - childS, maxY = H - childS;
 
-        for (int i = 0; i < n; i++) {
-            int ring = i / perRing;
-            int idxInRing = i % perRing;
-            int inThisRing = Math.min(perRing, n - ring * perRing);
-            double step = 2 * Math.PI / Math.max(inThisRing, 3);
-            double ang = -Math.PI / 2 + idxInRing * step;
-            int r = dp(this, RADIUS_DP + ring * (CHILD_DP + 12));
+        int placed = 0;
+        for (int ring = 0; ring < 6 && placed < n; ring++) {
+            int r = dp(this, RADIUS_DP + ring * (CHILD_DP + 10));
+            // มุมที่วางแล้วฟองยังอยู่ในจอทั้งใบ
+            java.util.List<Double> ok = new java.util.ArrayList<>();
+            int samples = 72;
+            for (int i = 0; i < samples; i++) {
+                double ang = -Math.PI / 2 + i * (2 * Math.PI / samples);
+                int x = cx + (int) (Math.cos(ang) * r) - childS / 2;
+                int y = cy + (int) (Math.sin(ang) * r) - childS / 2;
+                if (x >= 0 && x <= maxX && y >= 0 && y <= maxY) ok.add(ang);
+            }
+            if (ok.isEmpty()) continue;
+            // ระยะห่างเชิงมุมขั้นต่ำ ไม่ให้ฟองชนกัน
+            double minStep = (childS * 1.02) / r;
+            java.util.List<Double> picks = new java.util.ArrayList<>();
+            double last = -99;
+            for (double ang : ok) {
+                if (picks.isEmpty() || ang - last >= minStep) { picks.add(ang); last = ang; }
+            }
+            // กันฟองแรกกับฟองสุดท้ายชนกันตอนครบวง
+            if (picks.size() > 1 && (2 * Math.PI - (picks.get(picks.size() - 1) - picks.get(0))) < minStep)
+                picks.remove(picks.size() - 1);
 
-            int x = cx + (int) (Math.cos(ang) * r) - childS / 2;
-            int y = cy + (int) (Math.sin(ang) * r) - childS / 2;
-
-            // กันหลุดขอบจอ
-            x = Math.max(0, Math.min(x, dm.widthPixels - childS));
-            y = Math.max(0, Math.min(y, dm.heightPixels - childS));
-
-            WindowManager.LayoutParams p = childParams.get(i);
-            p.x = x; p.y = y;
-            try { wm.updateViewLayout(childViews.get(i), p); } catch (Exception ignored) {}
+            int take = Math.min(picks.size(), n - placed);
+            for (int k = 0; k < take; k++) {
+                int idx = take == 1 ? picks.size() / 2
+                        : (int) Math.round((double) k * (picks.size() - 1) / (take - 1));
+                double ang = picks.get(idx);
+                int x = cx + (int) (Math.cos(ang) * r) - childS / 2;
+                int y = cy + (int) (Math.sin(ang) * r) - childS / 2;
+                WindowManager.LayoutParams p = childParams.get(placed);
+                p.x = Math.max(0, Math.min(x, maxX));
+                p.y = Math.max(0, Math.min(y, maxY));
+                try { wm.updateViewLayout(childViews.get(placed), p); } catch (Exception ignored) {}
+                placed++;
+            }
+        }
+        // เผื่อกรณีสุดโต่ง (จอเล็กมาก) วางที่เหลือเรียงแนวตั้งข้างฟองแม่
+        int col = 0;
+        while (placed < n) {
+            WindowManager.LayoutParams p = childParams.get(placed);
+            p.x = Math.max(0, Math.min(cx - childS / 2, maxX));
+            p.y = Math.max(0, Math.min(cy + mainS / 2 + (col + 1) * (childS + dp(this, 4)), maxY));
+            try { wm.updateViewLayout(childViews.get(placed), p); } catch (Exception ignored) {}
+            placed++; col++;
         }
     }
 
