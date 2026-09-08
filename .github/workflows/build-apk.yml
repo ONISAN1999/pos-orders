@@ -49,3 +49,13 @@ jobs:
           tag_name: build-${{ github.run_number }}
           name: POS Orders build ${{ github.run_number }}
           files: POSOrders.apk
+
+      - name: Commit APK to dist/ (for direct git download)
+        run: |
+          mkdir -p dist
+          cp POSOrders.apk dist/POSOrders.apk
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add dist/POSOrders.apk
+          git commit -m "dist: POSOrders.apk build ${{ github.run_number }} [skip ci]" || exit 0
+          git push
