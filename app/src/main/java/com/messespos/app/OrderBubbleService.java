@@ -446,7 +446,7 @@ public class OrderBubbleService extends Service {
         panel.setElevation(dp(this, 18));
 
         LinearLayout head = row(this);
-        head.addView(text(this, "🧾 ออเดอร์ทั้งหมด", 16, true, WHITE), lpw(1));
+        head.addView(text(this, "🧾 ออเดอร์ทั้งหมด  " + ver(this), 16, true, WHITE), lpw(1));
         TextView refresh = chip(this, "⟳", false);
         Fx.onTap(refresh, () -> { fetchOrders(); Toast.makeText(this, "กำลังดึงออเดอร์…", Toast.LENGTH_SHORT).show(); });
         head.addView(refresh);

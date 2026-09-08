@@ -153,4 +153,11 @@ public class UI {
 
     public static final int WRAP = ViewGroup.LayoutParams.WRAP_CONTENT;
     public static final int MATCH = ViewGroup.LayoutParams.MATCH_PARENT;
+
+    /** เวอร์ชันแอปจาก build.gradle เช่น "v1.1" */
+    public static String ver(Context c) {
+        try {
+            return "v" + c.getPackageManager().getPackageInfo(c.getPackageName(), 0).versionName;
+        } catch (Exception e) { return ""; }
+    }
 }

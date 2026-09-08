@@ -29,7 +29,7 @@ public class MainActivity extends Activity {
         LinearLayout root = col(this);
         root.setPadding(dp(this, 20), dp(this, 30), dp(this, 20), dp(this, 30));
 
-        TextView h1 = text(this, "🧾 POS ออเดอร์", 24, true, WHITE);
+        TextView h1 = text(this, "🧾 POS ออเดอร์  " + ver(this), 24, true, WHITE);
         h1.setGravity(Gravity.CENTER);
         root.addView(h1);
 
