@@ -56,9 +56,12 @@ public class OrderBubbleService extends Service {
     private final Handler ui = new Handler(Looper.getMainLooper());
     private static final String CH = "pos_orders";
 
-    private static final int MAIN_DP = 66;
-    private static final int CHILD_DP = 58;
-    private static final int RADIUS_DP = 96;
+    private static final int MAIN_DP = 70;
+    private static final int CHILD_DP = 64;
+    private static final int PAD_DP = 8;                       // ขอบว่างรอบฟองย่อย ให้พื้นที่ตอนเต้น
+    private static final int CHILD_WIN = CHILD_DP + PAD_DP * 2; // ขนาดหน้าต่างจริงของฟองย่อย
+    private static final int RADIUS_DP = 104;
+    private TextView mainIcon;
 
     @Override public IBinder onBind(Intent i) { return null; }
 
@@ -106,11 +109,11 @@ public class OrderBubbleService extends Service {
         b.setBackground(bubbleBg(this));
         b.setElevation(dp(this, 12));
 
-        TextView icon = text(this, "🧾", 20, false, WHITE);
-        icon.setGravity(Gravity.CENTER);
-        b.addView(icon);
+        mainIcon = text(this, "🧾", 20, false, WHITE);
+        mainIcon.setGravity(Gravity.CENTER);
+        b.addView(mainIcon);
 
-        mainCount = text(this, "0", 13, true, WHITE);
+        mainCount = text(this, "0 ออเดอร์", 10.5f, true, WHITE);
         mainCount.setGravity(Gravity.CENTER);
         b.addView(mainCount);
 
@@ -168,53 +171,121 @@ public class OrderBubbleService extends Service {
 
     /** สร้าง/รีเฟรชฟองย่อยให้ตรงกับรายการออเดอร์ */
     private void rebuildChildren() {
-        for (View v : childViews) { try { wm.removeView(v); } catch (Exception ignored) {} }
+        for (View v : childViews) { stopPulse(v); try { wm.removeView(v); } catch (Exception ignored) {} }
         childViews.clear();
         childParams.clear();
 
+        int win = dp(this, CHILD_WIN);
         int s = dp(this, CHILD_DP);
         for (Order o : orders) {
             if (o.status.equals(Order.ST_DONE)) continue;
 
+            // หน้าต่างนอก (โปร่ง) → วงกลมข้างใน (เต้นได้โดยไม่โดนตัดขอบ)
+            android.widget.FrameLayout outer = new android.widget.FrameLayout(this);
             LinearLayout c = col(this);
             c.setGravity(Gravity.CENTER);
-            GradientDrawable g = new GradientDrawable();
-            g.setShape(GradientDrawable.OVAL);
-            g.setColor(o.tierColor());
-            g.setStroke(dp(this, 2), 0x99FFFFFF);
-            c.setBackground(g);
             c.setElevation(dp(this, 9));
+            android.widget.FrameLayout.LayoutParams cl = new android.widget.FrameLayout.LayoutParams(s, s);
+            cl.gravity = Gravity.CENTER;
+            outer.addView(c, cl);
 
-            TextView no = text(this, o.no.isEmpty() ? "•" : "#" + o.no, 13, true, 0xFF11141C);
-            no.setGravity(Gravity.CENTER);
-            c.addView(no);
+            TextView tag = text(this, "", 11, true, 0xFF11141C);
+            tag.setGravity(Gravity.CENTER);
+            tag.setSingleLine(true);
+            c.addView(tag);
 
-            TextView clk = text(this, o.clock(), 11.5f, true, 0xFF11141C);
+            TextView clk = text(this, "", 12.5f, true, 0xFF11141C);
             clk.setGravity(Gravity.CENTER);
+            clk.setSingleLine(true);
             c.addView(clk);
 
             final String oid = o.id;
             Fx.onTap(c, () -> openDetail(oid));
 
-            WindowManager.LayoutParams p = new WindowManager.LayoutParams(s, s, wtype(),
+            WindowManager.LayoutParams p = new WindowManager.LayoutParams(win, win, wtype(),
                     WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT);
             p.gravity = Gravity.TOP | Gravity.START;
 
-            childViews.add(c);
+            childViews.add(outer);
             childParams.add(p);
-            wm.addView(c, p);
-            if (!expanded) c.setVisibility(View.GONE);
+            wm.addView(outer, p);
+            if (!expanded) outer.setVisibility(View.GONE);
+            bindChild(outer, o);
         }
         layoutChildren();
-        mainCount.setText(String.valueOf(childViews.size()));
-        refreshBadges();
+        refreshMain();
+    }
+
+    /** ใส่ข้อความ/สี/สถานะอ่านแล้วให้ฟองย่อย 1 ฟอง */
+    private void bindChild(View outer, Order o) {
+        LinearLayout c = (LinearLayout) ((android.widget.FrameLayout) outer).getChildAt(0);
+        TextView tag = (TextView) c.getChildAt(0);
+        TextView clk = (TextView) c.getChildAt(1);
+        boolean unread = unreadIds.contains(o.id);
+
+        GradientDrawable g = new GradientDrawable();
+        g.setShape(GradientDrawable.OVAL);
+        g.setColor(o.tierColor());
+        g.setStroke(dp(this, unread ? 4 : 2), unread ? 0xFFFF2D55 : 0xB3FFFFFF);
+        c.setBackground(g);
+
+        tag.setText(unread ? "ใหม่!" : o.tag());
+        tag.setTextColor(unread ? 0xFFB3001B : 0xFF11141C);
+        clk.setText(o.clock());
+
+        if (unread) startPulse(c); else stopPulse(c);
+    }
+
+    /** ฟองแม่: ไอคอน + จำนวน; มีออเดอร์ยังไม่อ่าน → กระดิ่ง + ขอบแดง + เต้น */
+    private void refreshMain() {
+        int n = activeOrders().size();
+        int unread = unreadIds.size();
+        if (mainCount != null) mainCount.setText(unread > 0 ? "ใหม่ " + unread : n + " ออเดอร์");
+        if (mainIcon != null) mainIcon.setText(unread > 0 ? "🔔" : "🧾");
+        if (mainBubble != null) {
+            if (unread > 0) {
+                GradientDrawable g = new GradientDrawable();
+                g.setShape(GradientDrawable.OVAL);
+                g.setColors(new int[]{0xFFFF3B5C, 0xFFFF7A45});
+                g.setStroke(dp(this, 3), 0xFFFFFFFF);
+                mainBubble.setBackground(g);
+                startPulse(mainBubble);
+            } else {
+                mainBubble.setBackground(bubbleBg(this));
+                stopPulse(mainBubble);
+            }
+        }
+    }
+
+    private void startPulse(View v) {
+        if (v.getTag() instanceof android.animation.Animator) return;
+        android.animation.ObjectAnimator a = android.animation.ObjectAnimator.ofPropertyValuesHolder(v,
+                android.animation.PropertyValuesHolder.ofFloat(View.SCALE_X, 1f, 1.13f, 1f),
+                android.animation.PropertyValuesHolder.ofFloat(View.SCALE_Y, 1f, 1.13f, 1f));
+        a.setDuration(900);
+        a.setRepeatCount(android.animation.ValueAnimator.INFINITE);
+        a.setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator());
+        a.start();
+        v.setTag(a);
+    }
+
+    private void stopPulse(View v) {
+        if (v == null) return;
+        View target = v;
+        if (v instanceof android.widget.FrameLayout && ((android.widget.FrameLayout) v).getChildCount() > 0)
+            target = ((android.widget.FrameLayout) v).getChildAt(0);
+        if (target.getTag() instanceof android.animation.Animator) {
+            ((android.animation.Animator) target.getTag()).cancel();
+            target.setTag(null);
+        }
+        target.setScaleX(1f); target.setScaleY(1f);
     }
 
     /** วางฟองย่อยเป็นวงรอบฟองแม่ */
     private void layoutChildren() {
         int n = childViews.size();
         if (n == 0) return;
-        int mainS = dp(this, MAIN_DP), childS = dp(this, CHILD_DP);
+        int mainS = dp(this, MAIN_DP), childS = dp(this, CHILD_WIN);
         int cx = mainParams.x + mainS / 2;
         int cy = mainParams.y + mainS / 2;
 
@@ -252,16 +323,8 @@ public class OrderBubbleService extends Service {
     };
 
     private void refreshClocks() {
-        for (int i = 0; i < childViews.size() && i < activeOrders().size(); i++) {
-            Order o = activeOrders().get(i);
-            LinearLayout c = (LinearLayout) childViews.get(i);
-            if (c.getChildCount() >= 2) ((TextView) c.getChildAt(1)).setText(o.clock());
-            GradientDrawable g = new GradientDrawable();
-            g.setShape(GradientDrawable.OVAL);
-            g.setColor(o.tierColor());
-            g.setStroke(dp(this, 2), 0x99FFFFFF);
-            c.setBackground(g);
-        }
+        List<Order> act = activeOrders();
+        for (int i = 0; i < childViews.size() && i < act.size(); i++) bindChild(childViews.get(i), act.get(i));
     }
 
     private List<Order> activeOrders() {
@@ -312,18 +375,10 @@ public class OrderBubbleService extends Service {
         refreshBadges();
     }
 
-    /** จุดแดงเล็กบนฟองที่ยังไม่ได้อ่าน */
+    /** อัปเดตสถานะอ่านแล้ว/ยังไม่อ่าน ทั้งฟองย่อยและฟองแม่ */
     private void refreshBadges() {
-        List<Order> act = activeOrders();
-        for (int i = 0; i < childViews.size() && i < act.size(); i++) {
-            LinearLayout c = (LinearLayout) childViews.get(i);
-            if (c.getChildCount() >= 1 && c.getChildAt(0) instanceof TextView) {
-                Order o = act.get(i);
-                TextView no = (TextView) c.getChildAt(0);
-                String base = o.no.isEmpty() ? "•" : "#" + o.no;
-                no.setText(unreadIds.contains(o.id) ? "🔔" + base : base);
-            }
-        }
+        refreshClocks();
+        refreshMain();
     }
 
     /* ================= Popup รายละเอียด ================= */

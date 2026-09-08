@@ -26,6 +26,14 @@ public class Cloud {
     private static final String K_SHOP = "shop_code";
     private static final String K_LOCAL = "local_orders";
 
+    /** ส่วนต่างเวลา เครื่องนี้ vs เซิร์ฟเวอร์ (มิลลิวินาที) — กันนาฬิกาเครื่อง POS เพี้ยน */
+    public static long offset = 0;
+    private static boolean offsetKnown = false;
+
+    /** เวลาปัจจุบันตามเซิร์ฟเวอร์ */
+    public static long now() { return System.currentTimeMillis() + offset; }
+    public static boolean synced() { return offsetKnown; }
+
     public static SharedPreferences prefs(Context c) {
         return c.getSharedPreferences(PREF, Context.MODE_PRIVATE);
     }
@@ -67,7 +75,9 @@ public class Cloud {
 
     /** ส่งออเดอร์ขึ้นคลาวด์ (ใช้ตอนทดสอบ / สร้างเอง) */
     public static String push(Context c, Order o) throws Exception {
-        String res = http(base(c) + ".json", "POST", o.toJson().toString());
+        JSONObject j = o.toJson();
+        j.put("createdAt", new JSONObject().put(".sv", "timestamp"));   // ให้เซิร์ฟเวอร์ประทับเวลา
+        String res = http(base(c) + ".json", "POST", j.toString());
         try { return new JSONObject(res).optString("name", ""); } catch (Exception e) { return ""; }
     }
 
@@ -106,6 +116,10 @@ public class Cloud {
         }
 
         int code = con.getResponseCode();
+        try {
+            long srv = con.getHeaderFieldDate("Date", 0);
+            if (srv > 0) { offset = srv - System.currentTimeMillis(); offsetKnown = true; }
+        } catch (Exception ignored) {}
         InputStream in = (code >= 200 && code < 300) ? con.getInputStream() : con.getErrorStream();
         String out = "";
         if (in != null) {

@@ -25,7 +25,8 @@ public class Order {
 
     /** นาทีที่รอแล้ว */
     public int waitedMin() {
-        return (int) ((System.currentTimeMillis() - createdAt) / 60000L);
+        long m = (Cloud.now() - createdAt) / 60000L;
+        return (int) Math.max(0, m);
     }
 
     /** สีตามเวลา: <30 เขียว, 30-39 เหลือง, 40-49 ส้ม, 50-59 แดง, 60+ แดงเข้ม */
@@ -39,10 +40,19 @@ public class Order {
         return 0xFF22C55E;
     }
 
+    /** ข้อความเวลาแบบสั้นสำหรับฟองลอย เช่น "12 นาที" / "1 ชม 5" */
     public String clock() {
         int m = waitedMin();
-        if (m < 60) return m + "′";
-        return (m / 60) + "ชม" + (m % 60);
+        if (m < 60) return m + " นาที";
+        return (m / 60) + " ชม " + (m % 60);
+    }
+
+    /** ป้ายชื่อสั้นบนฟอง: #เลขออเดอร์ ถ้าไม่มีใช้จุดส่ง (ตัดสั้น) */
+    public String tag() {
+        if (!no.isEmpty()) return "#" + no;
+        String p = place.trim();
+        if (p.isEmpty()) return "ออเดอร์";
+        return p.length() > 6 ? p.substring(0, 6) : p;
     }
 
     public static Order fromJson(String id, JSONObject o) {
@@ -54,7 +64,7 @@ public class Order {
         r.total = o.optInt("total", 0);
         r.pay = o.optString("pay", "");
         r.status = o.optString("status", ST_NEW);
-        r.createdAt = o.optLong("createdAt", System.currentTimeMillis());
+        r.createdAt = o.optLong("createdAt", Cloud.now());
         JSONArray a = o.optJSONArray("lines");
         if (a != null) for (int i = 0; i < a.length(); i++) r.lines.add(a.optString(i));
         if (r.lines.isEmpty() && !r.text.isEmpty())
