@@ -472,30 +472,23 @@ public class OrderBubbleService extends Service {
             list.addView(em);
         }
 
+        List<Order> act = new ArrayList<>(), hist = new ArrayList<>();
         for (Order o : orders) {
-            LinearLayout rowv = row(this);
-            rowv.setBackground(glass(this, 0x1FFFFFFF, 12, 0x33FFFFFF));
-            rowv.setPadding(dp(this, 12), dp(this, 11), dp(this, 12), dp(this, 11));
+            if (o.status.equals(Order.ST_DONE)) hist.add(o); else act.add(o);
+        }
 
-            TextView dot = text(this, "●", 15, true, o.tierColor());
-            dot.setPadding(0, 0, dp(this, 9), 0);
-            rowv.addView(dot);
+        if (!act.isEmpty()) {
+            TextView h1 = text(this, "กำลังดำเนินการ (" + act.size() + ")", 12.5f, true, 0xFFFFD18F);
+            h1.setPadding(dp(this, 2), 0, 0, dp(this, 7));
+            list.addView(h1);
+            for (Order o : act) addOrderRow(list, o, false);
+        }
 
-            LinearLayout info = col(this);
-            info.addView(text(this, (o.no.isEmpty() ? "ออเดอร์" : "ออเดอร์ที่ " + o.no)
-                    + (o.place.isEmpty() ? "" : "  •  " + o.place), 13.5f, true, WHITE));
-            TextView meta = text(this, o.waitedMin() + " นาที  •  " + o.status
-                    + (o.total > 0 ? "  •  " + o.total + " บาท" : ""), 11.5f, false, WHITE_DIM);
-            meta.setPadding(0, dp(this, 3), 0, 0);
-            info.addView(meta);
-            rowv.addView(info, lpw(1));
-
-            final String oid = o.id;
-            Fx.onTap(rowv, () -> openDetail(oid));
-
-            LinearLayout.LayoutParams rl = lp(MATCH, WRAP);
-            rl.bottomMargin = dp(this, 8);
-            list.addView(rowv, rl);
+        if (!hist.isEmpty()) {
+            TextView h2 = text(this, "ประวัติออเดอร์ที่เสร็จแล้ว (" + hist.size() + ")", 12.5f, true, 0xFF9FE1CB);
+            h2.setPadding(dp(this, 2), dp(this, 10), 0, dp(this, 7));
+            list.addView(h2);
+            for (Order o : hist) addOrderRow(list, o, true);
         }
 
         sv.addView(list);
@@ -510,6 +503,33 @@ public class OrderBubbleService extends Service {
         panel.addView(clearDone, cdLp);
 
         showPanel();
+    }
+
+    /** 1 แถวในรายการออเดอร์ */
+    private void addOrderRow(LinearLayout list, Order o, boolean done) {
+        LinearLayout rowv = row(this);
+        rowv.setBackground(glass(this, done ? 0x12FFFFFF : 0x1FFFFFFF, 12, done ? 0x22FFFFFF : 0x33FFFFFF));
+        rowv.setPadding(dp(this, 12), dp(this, 11), dp(this, 12), dp(this, 11));
+
+        TextView dot = text(this, "●", 15, true, done ? 0xFF22C55E : o.tierColor());
+        dot.setPadding(0, 0, dp(this, 9), 0);
+        rowv.addView(dot);
+
+        LinearLayout info = col(this);
+        info.addView(text(this, (o.no.isEmpty() ? "ออเดอร์" : "ออเดอร์ที่ " + o.no)
+                + (o.place.isEmpty() ? "" : "  •  " + o.place), 13.5f, true, done ? WHITE_DIM : WHITE));
+        TextView meta = text(this, (done ? "ใช้เวลา " : "รอมา ") + o.waitedMin() + " นาที  •  " + o.status
+                + (o.total > 0 ? "  •  " + o.total + " บาท" : ""), 11.5f, false, WHITE_DIM);
+        meta.setPadding(0, dp(this, 3), 0, 0);
+        info.addView(meta);
+        rowv.addView(info, lpw(1));
+
+        final String oid = o.id;
+        Fx.onTap(rowv, () -> openDetail(oid));
+
+        LinearLayout.LayoutParams rl = lp(MATCH, WRAP);
+        rl.bottomMargin = dp(this, 8);
+        list.addView(rowv, rl);
     }
 
     private void clearDone() {
