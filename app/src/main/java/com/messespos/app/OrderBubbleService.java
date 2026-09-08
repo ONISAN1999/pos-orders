@@ -394,74 +394,130 @@ public class OrderBubbleService extends Service {
         closePanel();
         panel = col(this);
         panel.setBackground(glass(this, 0xF51B1F2E, 22, STROKE));
-        panel.setPadding(dp(this, 16), dp(this, 16), dp(this, 16), dp(this, 16));
+        panel.setPadding(dp(this, 20), dp(this, 16), dp(this, 20), dp(this, 16));
         panel.setElevation(dp(this, 18));
 
-        // หัว
+        DisplayMetrics dm = getResources().getDisplayMetrics();
+        boolean wide = dm.widthPixels > dm.heightPixels;   // จอ POS แนวนอน → 2 คอลัมน์
+
+        // ---------- หัว ----------
         LinearLayout head = row(this);
+        head.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout titleCol = col(this);
-        titleCol.addView(text(this, "ออเดอร์ " + (o.no.isEmpty() ? "" : "ที่ " + o.no)
-                + (o.place.isEmpty() ? "" : "  •  " + o.place), 16, true, WHITE));
-        TextView sub = text(this, "รอมาแล้ว " + o.waitedMin() + " นาที   •   " + o.status, 12, false, WHITE_DIM);
+        titleCol.addView(text(this, (o.no.isEmpty() ? "ออเดอร์" : "ออเดอร์ #" + o.no)
+                + (o.place.isEmpty() ? "" : "  •  " + o.place), 22, true, WHITE));
+        TextView sub = text(this, "รอมาแล้ว " + o.waitedMin() + " นาที", 13, false, WHITE_DIM);
         sub.setPadding(0, dp(this, 3), 0, 0);
         titleCol.addView(sub);
         head.addView(titleCol, lpw(1));
 
+        TextView stChip = chip(this, o.status, false);
+        stChip.setBackground(glass(this, o.status.equals(Order.ST_DOING) ? 0x59F97316 : 0x33FFFFFF, 20,
+                o.status.equals(Order.ST_DOING) ? 0x99F97316 : 0x55FFFFFF));
+        head.addView(stChip);
         TextView close = chip(this, "✕", false);
+        LinearLayout.LayoutParams clp = lp(WRAP, WRAP); clp.leftMargin = dp(this, 8);
+        close.setLayoutParams(clp);
         Fx.onTap(close, this::closePanel);
         head.addView(close);
         panel.addView(head, lp(MATCH, WRAP));
 
-        // รายการ — แตะบรรทัดเพื่อคัดลอกทีละรายการ
+        // ---------- รายการ (ซ้าย) ----------
         ScrollView sv = new ScrollView(this);
         LinearLayout list = col(this);
+        java.util.regex.Pattern pricePat = java.util.regex.Pattern.compile("^(.*\\S)\\s+(\\d[\\d,]*)\\s*บาท$");
         for (String line : o.lines) {
-            final String s = line;
-            TextView t = text(this, s, 14, false, WHITE);
-            t.setBackground(glass(this, 0x1FFFFFFF, 11, 0x33FFFFFF));
-            t.setPadding(dp(this, 12), dp(this, 11), dp(this, 12), dp(this, 11));
+            String t = line.trim();
+            if (t.isEmpty()) continue;
+            if (t.startsWith("ช่องทางชำระ") || t.startsWith("สถานะ")) continue;   // ไปอยู่การ์ดขวาแล้ว
+            final String s = t;
+            LinearLayout rowv = row(this);
+            rowv.setGravity(Gravity.CENTER_VERTICAL);
+            rowv.setBackground(glass(this, 0x1FFFFFFF, 12, 0x33FFFFFF));
+            rowv.setPadding(dp(this, 14), dp(this, 12), dp(this, 14), dp(this, 12));
+            java.util.regex.Matcher m = pricePat.matcher(t);
+            if (m.find()) {
+                rowv.addView(text(this, m.group(1), 17, true, WHITE), lpw(1));
+                TextView pr = text(this, m.group(2) + " บาท", 16, true, OK_GREEN);
+                pr.setPadding(dp(this, 12), 0, 0, 0);
+                rowv.addView(pr);
+            } else {
+                rowv.addView(text(this, t, 16, false, WHITE), lpw(1));
+            }
             LinearLayout.LayoutParams lp2 = lp(MATCH, WRAP);
-            lp2.bottomMargin = dp(this, 7);
-            Fx.onCopyTap(t, () -> copy(s, "คัดลอก: " + s));
-            list.addView(t, lp2);
+            lp2.bottomMargin = dp(this, 8);
+            Fx.onCopyTap(rowv, () -> copy(s, "คัดลอก: " + s));
+            list.addView(rowv, lp2);
         }
-        if (o.total > 0) {
-            TextView tt = text(this, "ยอดรวม " + o.total + " บาท", 15, true, OK_GREEN);
-            tt.setPadding(dp(this, 2), dp(this, 6), 0, 0);
-            list.addView(tt);
-        }
-        if (!o.pay.isEmpty()) {
-            TextView pt = text(this, o.pay, 12.5f, false, 0xFFFFE6B8);
-            pt.setPadding(dp(this, 2), dp(this, 5), 0, 0);
-            list.addView(pt);
-        }
+        TextView hint = text(this, "แตะรายการเพื่อคัดลอกทีละบรรทัด", 11, false, 0xFF8FA0BD);
+        hint.setPadding(dp(this, 4), dp(this, 2), 0, 0);
+        list.addView(hint);
         sv.addView(list);
-        LinearLayout.LayoutParams svLp = lp(MATCH, dp(this, 260));
-        svLp.topMargin = dp(this, 13);
-        panel.addView(sv, svLp);
 
-        // ปุ่มคัดลอกทั้งหมด
-        TextView copyAll = button(this, "📋   คัดลอกทั้งออเดอร์", glass(this, GLASS, 14, STROKE), 14);
-        LinearLayout.LayoutParams caLp = lp(MATCH, WRAP);
-        caLp.topMargin = dp(this, 12);
-        Fx.onCopyTap(copyAll, () -> copy(o.text.isEmpty() ? joinLines(o) : o.text, "คัดลอกออเดอร์แล้ว"));
-        panel.addView(copyAll, caLp);
-
-        // ปุ่มสถานะ
-        LinearLayout acts = row(this);
-        if (!o.status.equals(Order.ST_DOING)) {
-            TextView doing = button(this, "🔥  กำลังทำ", glass(this, 0x59F97316, 14, 0x99F97316), 14);
-            Fx.onTap(doing, () -> updateStatus(o, Order.ST_DOING));
-            acts.addView(doing, lpw(1));
+        // ---------- สรุป + ปุ่ม (ขวา) ----------
+        LinearLayout side = col(this);
+        LinearLayout info = col(this);
+        info.setBackground(glass(this, 0x14FFFFFF, 16, 0x2EFFFFFF));
+        info.setPadding(dp(this, 16), dp(this, 14), dp(this, 16), dp(this, 14));
+        info.addView(text(this, "ยอดรวม", 12, false, WHITE_DIM));
+        TextView tot = text(this, (o.total > 0 ? o.total : 0) + " บาท", 30, true, OK_GREEN);
+        info.addView(tot);
+        if (!o.pay.isEmpty()) {
+            View div = new View(this);
+            div.setBackgroundColor(0x33FFFFFF);
+            LinearLayout.LayoutParams dl = lp(MATCH, dp(this, 1));
+            dl.topMargin = dp(this, 10); dl.bottomMargin = dp(this, 10);
+            info.addView(div, dl);
+            for (String pl : o.pay.split("\\n")) {
+                String q = pl.trim();
+                if (q.isEmpty()) continue;
+                int i = q.indexOf(":");
+                LinearLayout pr = row(this);
+                if (i > 0) {
+                    pr.addView(text(this, q.substring(0, i).trim(), 13, false, WHITE_DIM), lpw(1));
+                    pr.addView(text(this, q.substring(i + 1).trim(), 14, true, 0xFFFFE6B8));
+                } else {
+                    pr.addView(text(this, q, 13, false, 0xFFFFE6B8), lpw(1));
+                }
+                LinearLayout.LayoutParams prl = lp(MATCH, WRAP); prl.topMargin = dp(this, 4);
+                info.addView(pr, prl);
+            }
         }
-        TextView done = button(this, "✓  เสร็จ", green(this, 14), 14);
-        LinearLayout.LayoutParams dLp = lpw(1);
-        dLp.leftMargin = acts.getChildCount() > 0 ? dp(this, 8) : 0;
+        side.addView(info, lp(MATCH, WRAP));
+
+        View spacer = new View(this);
+        side.addView(spacer, lpw(1));
+
+        if (!o.status.equals(Order.ST_DOING)) {
+            TextView doing = button(this, "🔥  รับออเดอร์ / กำลังทำ", glass(this, 0x59F97316, 14, 0x99F97316), 15);
+            Fx.onTap(doing, () -> updateStatus(o, Order.ST_DOING));
+            LinearLayout.LayoutParams dl = lp(MATCH, WRAP); dl.topMargin = dp(this, 10);
+            side.addView(doing, dl);
+        }
+        TextView done = button(this, "✓  เสร็จแล้ว", green(this, 14), 16);
         Fx.onTap(done, () -> updateStatus(o, Order.ST_DONE));
-        acts.addView(done, dLp);
-        LinearLayout.LayoutParams acLp = lp(MATCH, WRAP);
-        acLp.topMargin = dp(this, 9);
-        panel.addView(acts, acLp);
+        LinearLayout.LayoutParams dnl = lp(MATCH, WRAP); dnl.topMargin = dp(this, 8);
+        side.addView(done, dnl);
+        TextView copyAll = button(this, "📋  คัดลอกทั้งออเดอร์", glass(this, GLASS, 14, STROKE), 13.5f);
+        Fx.onCopyTap(copyAll, () -> copy(o.text.isEmpty() ? joinLines(o) : o.text, "คัดลอกออเดอร์แล้ว"));
+        LinearLayout.LayoutParams cal = lp(MATCH, WRAP); cal.topMargin = dp(this, 8);
+        side.addView(copyAll, cal);
+
+        // ---------- ประกอบ ----------
+        int bodyH = Math.min(dp(this, 360), (int) (dm.heightPixels * 0.62f));
+        if (wide) {
+            LinearLayout body = row(this);
+            LinearLayout.LayoutParams ll = lpw(3); ll.rightMargin = dp(this, 16);
+            body.addView(sv, ll);
+            body.addView(side, lpw(2));
+            LinearLayout.LayoutParams bl = lp(MATCH, bodyH); bl.topMargin = dp(this, 14);
+            panel.addView(body, bl);
+        } else {
+            LinearLayout.LayoutParams sl = lp(MATCH, Math.min(dp(this, 240), bodyH)); sl.topMargin = dp(this, 12);
+            panel.addView(sv, sl);
+            LinearLayout.LayoutParams sdl = lp(MATCH, WRAP); sdl.topMargin = dp(this, 10);
+            panel.addView(side, sdl);
+        }
 
         showPanel();
     }
@@ -603,9 +659,11 @@ public class OrderBubbleService extends Service {
     /* ================= panel helper ================= */
 
     private void showPanel() {
-        panelParams = new WindowManager.LayoutParams(MATCH, WRAP, wtype(),
+        DisplayMetrics dm = getResources().getDisplayMetrics();
+        int w = Math.min(dm.widthPixels, dp(this, 1000));   // จอกว้างมาก → จำกัดความกว้างให้อ่านง่าย
+        panelParams = new WindowManager.LayoutParams(w, WRAP, wtype(),
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL, PixelFormat.TRANSLUCENT);
-        panelParams.gravity = Gravity.BOTTOM;
+        panelParams.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
 
         panel.setFocusableInTouchMode(true);
         panel.setOnKeyListener((v, code, ev) -> {
