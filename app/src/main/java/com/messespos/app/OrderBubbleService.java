@@ -51,6 +51,7 @@ public class OrderBubbleService extends Service {
 
     private final java.util.Set<String> seenIds = new java.util.HashSet<>();
     private final java.util.Set<String> unreadIds = new java.util.HashSet<>();
+    private final java.util.Map<String, Long> seenEdit = new java.util.HashMap<>();   // editedAt ล่าสุดที่เคยเห็น
 
     private boolean expanded = true;
     private final Handler ui = new Handler(Looper.getMainLooper());
@@ -226,11 +227,12 @@ public class OrderBubbleService extends Service {
         GradientDrawable g = new GradientDrawable();
         g.setShape(GradientDrawable.OVAL);
         g.setColor(o.tierColor());
-        g.setStroke(dp(this, unread ? 4 : 2), unread ? 0xFFFF2D55 : 0xB3FFFFFF);
+        boolean edited = o.needsAck();
+        g.setStroke(dp(this, (unread || edited) ? 4 : 2), unread ? 0xFFFF2D55 : edited ? 0xFF7C3AED : 0xB3FFFFFF);
         c.setBackground(g);
 
-        tag.setText(unread ? "ใหม่!" : o.tag());
-        tag.setTextColor(unread ? 0xFFB3001B : 0xFF11141C);
+        tag.setText(unread ? (edited ? "แก้ไข!" : "ใหม่!") : edited ? "แก้ไข" : o.tag());
+        tag.setTextColor(unread ? 0xFFB3001B : edited ? 0xFF4C1D95 : 0xFF11141C);
         clk.setText(o.clock());
 
         if (unread) startPulse(c); else stopPulse(c);
@@ -348,6 +350,13 @@ public class OrderBubbleService extends Service {
                 ui.post(() -> {
                     boolean isNew = false;
                     for (Order o : got) {
+                        // แก้ไขจากมือถือ → เตือนเหมือนออเดอร์ใหม่ (แม้เคยเสร็จแล้ว)
+                        Long prev = seenEdit.get(o.id);
+                        if (o.editedAt > 0 && (prev == null || o.editedAt > prev)) {
+                            boolean firstSight = prev == null && !seenIds.contains(o.id);
+                            seenEdit.put(o.id, o.editedAt);
+                            if (!firstSight && o.needsAck()) { unreadIds.add(o.id); isNew = true; }
+                        }
                         if (o.status.equals(Order.ST_DONE)) continue;
                         if (!seenIds.contains(o.id)) {
                             seenIds.add(o.id);
@@ -421,6 +430,28 @@ public class OrderBubbleService extends Service {
         Fx.onTap(close, this::closePanel);
         head.addView(close);
         panel.addView(head, lp(MATCH, WRAP));
+
+        // ---------- แจ้งว่าออเดอร์ถูกแก้ไข ----------
+        if (o.needsAck()) {
+            LinearLayout ab = row(this);
+            ab.setBackground(glass(this, 0x33A78BFA, 14, 0x99A78BFA));
+            ab.setPadding(dp(this, 14), dp(this, 10), dp(this, 10), dp(this, 10));
+            LinearLayout ac = col(this);
+            ac.addView(text(this, "✏️ ออเดอร์นี้ถูกแก้ไขจากมือถือ", 15, true, 0xFFE9D5FF));
+            ac.addView(text(this, "ตรวจรายการใหม่อีกครั้ง แล้วกดรับทราบ", 12, false, WHITE_DIM));
+            ab.addView(ac, lpw(1));
+            TextView ack = button(this, "✓ รับทราบการแก้ไข", glass(this, 0xFF7C3AED, 14, 0), 14);
+            Fx.onTap(ack, () -> {
+                o.ackEditAt = Math.max(o.editedAt, Cloud.now());
+                new Thread(() -> { try { Cloud.ackEdit(OrderBubbleService.this, o.id); } catch (Exception ignored) {} }).start();
+                Toast.makeText(this, "รับทราบการแก้ไขแล้ว", Toast.LENGTH_SHORT).show();
+                rebuildChildren();
+                openDetail(o.id);
+            });
+            ab.addView(ack);
+            LinearLayout.LayoutParams abl = lp(MATCH, WRAP); abl.topMargin = dp(this, 12);
+            panel.addView(ab, abl);
+        }
 
         // ---------- รายการ (ซ้าย) ----------
         ScrollView sv = new ScrollView(this);
@@ -630,7 +661,8 @@ public class OrderBubbleService extends Service {
         info.addView(text(this, (o.no.isEmpty() ? "ออเดอร์" : "ออเดอร์ที่ " + o.no)
                 + (o.place.isEmpty() ? "" : "  •  " + o.place), 13.5f, true, done ? WHITE_DIM : WHITE));
         TextView meta = text(this, (done ? "ใช้เวลา " : "รอมา ") + o.waitedMin() + " นาที  •  " + o.status
-                + (o.total > 0 ? "  •  " + o.total + " บาท" : ""), 11.5f, false, WHITE_DIM);
+                + (o.total > 0 ? "  •  " + o.total + " บาท" : "")
+                + (o.needsAck() ? "  •  ✏️ แก้ไข — รอรับทราบ" : ""), 11.5f, false, o.needsAck() ? 0xFFE9D5FF : WHITE_DIM);
         meta.setPadding(0, dp(this, 3), 0, 0);
         info.addView(meta);
         rowv.addView(info, lpw(1));

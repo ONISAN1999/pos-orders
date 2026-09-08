@@ -22,6 +22,10 @@ public class Order {
     public String pay = "";         // ช่องทาง/สถานะชำระ
     public String status = ST_NEW;
     public long createdAt = System.currentTimeMillis();
+    public long editedAt = 0, ackEditAt = 0;   // แก้ไขจากมือถือ / POS กดรับทราบแล้ว
+
+    /** ถูกแก้ไขจากมือถือ และยังไม่ได้กดรับทราบ */
+    public boolean needsAck() { return editedAt > 0 && ackEditAt < editedAt; }
 
     /** นาทีที่รอแล้ว */
     public int waitedMin() {
@@ -65,6 +69,8 @@ public class Order {
         r.pay = o.optString("pay", "");
         r.status = o.optString("status", ST_NEW);
         r.createdAt = o.optLong("createdAt", Cloud.now());
+        r.editedAt = o.optLong("editedAt", 0);
+        r.ackEditAt = o.optLong("ackEditAt", 0);
         JSONArray a = o.optJSONArray("lines");
         if (a != null) for (int i = 0; i < a.length(); i++) r.lines.add(a.optString(i));
         if (r.lines.isEmpty() && !r.text.isEmpty())

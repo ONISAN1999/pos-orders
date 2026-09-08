@@ -94,6 +94,14 @@ public class Cloud {
         http(base(c) + "/" + id + ".json", "PATCH", o.toString());
     }
 
+    /** POS กดรับทราบการแก้ไข */
+    public static void ackEdit(Context c, String id) throws Exception {
+        JSONObject o = new JSONObject();
+        o.put("ackEditAt", new JSONObject().put(".sv", "timestamp"));
+        o.put("edited", false);
+        http(base(c) + "/" + id + ".json", "PATCH", o.toString());
+    }
+
     /** ลบออเดอร์ */
     public static void remove(Context c, String id) throws Exception {
         http(base(c) + "/" + id + ".json", "DELETE", null);
