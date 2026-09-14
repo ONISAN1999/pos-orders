@@ -52,6 +52,8 @@ public class OrderBubbleService extends Service {
     private final java.util.Set<String> seenIds = new java.util.HashSet<>();
     private final java.util.Set<String> unreadIds = new java.util.HashSet<>();
     private final java.util.Map<String, Long> seenEdit = new java.util.HashMap<>();   // editedAt ล่าสุดที่เคยเห็น
+    private View listBubble;              // ปุ่ม 📋 เล็กติดฟองแม่ → เปิดรายการ/ประวัติได้ตลอด
+    private WindowManager.LayoutParams listParams;
     private long harvestShownAt = 0;      // สัญญาณเก็บกุ้งที่เปิด popup ไปแล้ว
     private boolean harvestPanel = false; // popup เก็บกุ้งเปิดอยู่
 
@@ -146,6 +148,7 @@ public class OrderBubbleService extends Service {
                         mainParams.y = iy + dy;
                         wm.updateViewLayout(mainBubble, mainParams);
                         layoutChildren();   // ลูกตามพ่อ
+                        placeListBubble();
                         return true;
                     case MotionEvent.ACTION_UP:
                         if (!moved) {
@@ -163,6 +166,37 @@ public class OrderBubbleService extends Service {
         mainBubble.setOnLongClickListener(v -> { Fx.buzz(this); openList(); return true; });
 
         wm.addView(mainBubble, mainParams);
+        addListBubble();
+    }
+
+    /** ปุ่ม 📋 เล็กๆ เกาะมุมล่างขวาของฟองแม่ — กดเปิดรายการ + ประวัติได้ตลอด แม้มีออเดอร์อยู่ */
+    private void addListBubble() {
+        TextView b = text(this, "📋", 15, false, WHITE);
+        b.setGravity(Gravity.CENTER);
+        GradientDrawable g = new GradientDrawable();
+        g.setShape(GradientDrawable.OVAL);
+        g.setColor(0xFF1E2A44);
+        g.setStroke(dp(this, 2), 0xFFFFFFFF);
+        b.setBackground(g);
+        b.setElevation(dp(this, 13));
+        listBubble = b;
+        int s = dp(this, 38);
+        listParams = new WindowManager.LayoutParams(s, s, wtype(),
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT);
+        listParams.gravity = Gravity.TOP | Gravity.START;
+        Fx.onTap(b, () -> { if (panel != null) closePanel(); openList(); });
+        wm.addView(listBubble, listParams);
+        placeListBubble();
+    }
+
+    private void placeListBubble() {
+        if (listBubble == null) return;
+        int mainS = dp(this, MAIN_DP), s = dp(this, 38);
+        DisplayMetrics dm = getResources().getDisplayMetrics();
+        int x = mainParams.x + mainS - s / 2, y = mainParams.y + mainS - s / 2;
+        listParams.x = Math.max(0, Math.min(x, dm.widthPixels - s));
+        listParams.y = Math.max(0, Math.min(y, dm.heightPixels - s));
+        try { wm.updateViewLayout(listBubble, listParams); } catch (Exception ignored) {}
     }
 
     private void toggleExpand() {
@@ -730,6 +764,9 @@ public class OrderBubbleService extends Service {
         for (Order o : orders) {
             if (o.status.equals(Order.ST_DONE)) hist.add(o); else act.add(o);
         }
+        // กำลังทำ: รอนานสุดอยู่บน  /  ประวัติ: ล่าสุดอยู่บน
+        java.util.Collections.sort(act, (a, b) -> Long.compare(a.createdAt, b.createdAt));
+        java.util.Collections.sort(hist, (a, b) -> Long.compare(Math.max(b.editedAt, b.createdAt), Math.max(a.editedAt, a.createdAt)));
 
         if (!act.isEmpty()) {
             TextView h1 = text(this, "กำลังดำเนินการ (" + act.size() + ")", 12.5f, true, 0xFFFFD18F);
@@ -900,5 +937,6 @@ public class OrderBubbleService extends Service {
         for (View v : childViews) { try { wm.removeView(v); } catch (Exception ignored) {} }
         childViews.clear();
         if (mainBubble != null) { try { wm.removeView(mainBubble); } catch (Exception ignored) {} }
+        if (listBubble != null) { try { wm.removeView(listBubble); } catch (Exception ignored) {} }
     }
 }
