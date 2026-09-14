@@ -102,6 +102,33 @@ public class Cloud {
         http(base(c) + "/" + id + ".json", "PATCH", o.toString());
     }
 
+    /* ---------------- แจ้งเก็บกุ้งจากบ่อ (สัญญาณจากมือถือ) ---------------- */
+    public static long harvestAt = 0, harvestAck = 0;
+    public static int harvestEvery = 0;
+
+    private static String harvestUrl(Context c) {
+        String u = dbUrl(c);
+        while (u.endsWith("/")) u = u.substring(0, u.length() - 1);
+        return u + "/shops/" + shop(c) + "/harvest.json";
+    }
+
+    /** อ่านสถานะ — background thread */
+    public static void fetchHarvest(Context c) throws Exception {
+        String body = http(harvestUrl(c), "GET", null);
+        if (body == null || body.equals("null") || body.trim().isEmpty()) { harvestAt = 0; harvestAck = 0; return; }
+        JSONObject o = new JSONObject(body);
+        harvestAt = o.optLong("at", 0);
+        harvestAck = o.optLong("ack", 0);
+        harvestEvery = o.optInt("every", 0);
+    }
+
+    /** POS กดรับทราบว่าไปเก็บกุ้งแล้ว */
+    public static void ackHarvest(Context c) throws Exception {
+        JSONObject o = new JSONObject();
+        o.put("ack", new JSONObject().put(".sv", "timestamp"));
+        http(harvestUrl(c), "PATCH", o.toString());
+    }
+
     /** ลบออเดอร์ */
     public static void remove(Context c, String id) throws Exception {
         http(base(c) + "/" + id + ".json", "DELETE", null);

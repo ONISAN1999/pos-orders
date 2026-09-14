@@ -23,6 +23,7 @@ public class Order {
     public String status = ST_NEW;
     public long createdAt = System.currentTimeMillis();
     public long editedAt = 0, ackEditAt = 0;   // แก้ไขจากมือถือ / POS กดรับทราบแล้ว
+    public List<String> prevLines = new ArrayList<>();   // รายการก่อนแก้ (ไว้ไฮไลต์ส่วนที่เปลี่ยน)
 
     /** ถูกแก้ไขจากมือถือ และยังไม่ได้กดรับทราบ */
     public boolean needsAck() { return editedAt > 0 && ackEditAt < editedAt; }
@@ -71,6 +72,8 @@ public class Order {
         r.createdAt = o.optLong("createdAt", Cloud.now());
         r.editedAt = o.optLong("editedAt", 0);
         r.ackEditAt = o.optLong("ackEditAt", 0);
+        JSONArray pv = o.optJSONArray("prevLines");
+        if (pv != null) for (int i = 0; i < pv.length(); i++) r.prevLines.add(pv.optString(i));
         JSONArray a = o.optJSONArray("lines");
         if (a != null) for (int i = 0; i < a.length(); i++) r.lines.add(a.optString(i));
         if (r.lines.isEmpty() && !r.text.isEmpty())

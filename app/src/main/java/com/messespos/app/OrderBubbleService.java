@@ -52,6 +52,8 @@ public class OrderBubbleService extends Service {
     private final java.util.Set<String> seenIds = new java.util.HashSet<>();
     private final java.util.Set<String> unreadIds = new java.util.HashSet<>();
     private final java.util.Map<String, Long> seenEdit = new java.util.HashMap<>();   // editedAt ล่าสุดที่เคยเห็น
+    private long harvestShownAt = 0;      // สัญญาณเก็บกุ้งที่เปิด popup ไปแล้ว
+    private boolean harvestPanel = false; // popup เก็บกุ้งเปิดอยู่
 
     private boolean expanded = true;
     private final Handler ui = new Handler(Looper.getMainLooper());
@@ -375,7 +377,9 @@ public class OrderBubbleService extends Service {
         new Thread(() -> {
             try {
                 final List<Order> got = Cloud.fetch(OrderBubbleService.this);
+                try { Cloud.fetchHarvest(OrderBubbleService.this); } catch (Exception ignored) {}
                 ui.post(() -> {
+                    checkHarvest();
                     boolean isNew = false;
                     for (Order o : got) {
                         // แก้ไขจากมือถือ → เตือนเหมือนออเดอร์ใหม่ (แม้เคยเสร็จแล้ว)
@@ -485,21 +489,80 @@ public class OrderBubbleService extends Service {
         ScrollView sv = new ScrollView(this);
         LinearLayout list = col(this);
         java.util.regex.Pattern pricePat = java.util.regex.Pattern.compile("^(.*\\S)\\s+(\\d[\\d,]*)\\s*บาท$");
+        final boolean showDiff = o.needsAck() && !o.prevLines.isEmpty();
+        java.util.Set<String> prevSet = new java.util.HashSet<>(o.prevLines);
+        java.util.Set<String> curSet = new java.util.HashSet<>();
+        for (String line : o.lines) curSet.add(line.trim());
+
+        // จุดส่ง — คัดลอกเฉพาะชื่อสถานที่
+        if (!o.place.isEmpty()) {
+            LinearLayout pr = row(this);
+            pr.setGravity(Gravity.CENTER_VERTICAL);
+            pr.setBackground(glass(this, 0x2634D399, 12, 0x5534D399));
+            pr.setPadding(dp(this, 14), dp(this, 10), dp(this, 12), dp(this, 10));
+            pr.addView(text(this, "📍 " + o.place, 16, true, WHITE), lpw(1));
+            TextView cp = chip(this, "📋 คัดลอกชื่อ", false);
+            pr.addView(cp);
+            final String plc = o.place;
+            Fx.onCopyTap(pr, () -> copy(plc, "คัดลอก: " + plc));
+            Fx.onCopyTap(cp, () -> copy(plc, "คัดลอก: " + plc));
+            LinearLayout.LayoutParams prl = lp(MATCH, WRAP); prl.bottomMargin = dp(this, 8);
+            list.addView(pr, prl);
+        }
+
         for (String line : o.lines) {
             String t = line.trim();
             if (t.isEmpty()) continue;
             if (t.startsWith("ช่องทางชำระ") || t.startsWith("สถานะ")) continue;   // ไปอยู่การ์ดขวาแล้ว
+            final boolean isNote = t.startsWith("หมายเหตุ");
+            final boolean changed = showDiff && !prevSet.contains(t);
             final String s = t;
             LinearLayout rowv = row(this);
             rowv.setGravity(Gravity.CENTER_VERTICAL);
-            rowv.setBackground(glass(this, 0x1FFFFFFF, 12, 0x33FFFFFF));
+            rowv.setBackground(glass(this,
+                    isNote ? 0x33FFB84D : changed ? 0x40A78BFA : 0x1FFFFFFF, 12,
+                    isNote ? 0x99FFB84D : changed ? 0xCCA78BFA : 0x33FFFFFF));
             rowv.setPadding(dp(this, 14), dp(this, 12), dp(this, 14), dp(this, 12));
+
+            // รูปเมนูที่มักทำสลับกัน: ข้าวหน้ากุ้งแกะ / ข้าวหน้ากุ้งผ่า
+            int img = t.contains("กุ้งแกะ") ? R.drawable.menu_kae : t.contains("กุ้งผ่า") ? R.drawable.menu_pha : 0;
+            if (img != 0) {
+                android.widget.ImageView iv = new android.widget.ImageView(this);
+                iv.setImageResource(img);
+                iv.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
+                iv.setClipToOutline(true);
+                iv.setBackground(glass(this, 0xFFFFFFFF, 10, 0));
+                LinearLayout.LayoutParams il = lp(dp(this, 84), dp(this, 64));
+                il.rightMargin = dp(this, 12);
+                rowv.addView(iv, il);
+            }
+
+            if (changed) {
+                TextView tag = text(this, "แก้", 11, true, WHITE);
+                tag.setBackground(glass(this, 0xFF7C3AED, 8, 0));
+                tag.setPadding(dp(this, 7), dp(this, 2), dp(this, 7), dp(this, 2));
+                LinearLayout.LayoutParams tl = lp(WRAP, WRAP); tl.rightMargin = dp(this, 10);
+                rowv.addView(tag, tl);
+            }
+
             java.util.regex.Matcher m = pricePat.matcher(t);
-            if (m.find()) {
-                rowv.addView(text(this, m.group(1), 17, true, WHITE), lpw(1));
+            if (isNote) {
+                int i = t.indexOf(":");
+                rowv.addView(text(this, "📝 " + (i > 0 ? t.substring(i + 1).trim() : t), 16, true, 0xFFFFE6B8), lpw(1));
+            } else if (m.find()) {
+                String nm = m.group(1);
+                boolean shipLine = t.startsWith("ค่าส่ง");
+                rowv.addView(text(this, nm, 17, true, WHITE), lpw(1));
                 TextView pr = text(this, m.group(2) + " บาท", 16, true, OK_GREEN);
                 pr.setPadding(dp(this, 12), 0, 0, 0);
                 rowv.addView(pr);
+                if (shipLine && !o.place.isEmpty()) {
+                    final String plc = o.place;
+                    Fx.onCopyTap(rowv, () -> copy(plc, "คัดลอก: " + plc));
+                    LinearLayout.LayoutParams lp2 = lp(MATCH, WRAP); lp2.bottomMargin = dp(this, 8);
+                    list.addView(rowv, lp2);
+                    continue;
+                }
             } else {
                 rowv.addView(text(this, t, 16, false, WHITE), lpw(1));
             }
@@ -507,6 +570,27 @@ public class OrderBubbleService extends Service {
             lp2.bottomMargin = dp(this, 8);
             Fx.onCopyTap(rowv, () -> copy(s, "คัดลอก: " + s));
             list.addView(rowv, lp2);
+        }
+        // รายการที่ถูกตัดออกหลังแก้ไข
+        if (showDiff) {
+            for (String pv : o.prevLines) {
+                String t = pv.trim();
+                if (t.isEmpty() || curSet.contains(t)) continue;
+                if (t.startsWith("ช่องทางชำระ") || t.startsWith("สถานะ")) continue;
+                LinearLayout rowv = row(this);
+                rowv.setBackground(glass(this, 0x22EF4444, 12, 0x66EF4444));
+                rowv.setPadding(dp(this, 14), dp(this, 10), dp(this, 14), dp(this, 10));
+                TextView tag = text(this, "ตัดออก", 11, true, WHITE);
+                tag.setBackground(glass(this, 0xFFEF4444, 8, 0));
+                tag.setPadding(dp(this, 7), dp(this, 2), dp(this, 7), dp(this, 2));
+                LinearLayout.LayoutParams tl = lp(WRAP, WRAP); tl.rightMargin = dp(this, 10);
+                rowv.addView(tag, tl);
+                TextView tv = text(this, t, 15, false, 0xFFFFB4B4);
+                tv.setPaintFlags(tv.getPaintFlags() | android.graphics.Paint.STRIKE_THRU_TEXT_FLAG);
+                rowv.addView(tv, lpw(1));
+                LinearLayout.LayoutParams lp2 = lp(MATCH, WRAP); lp2.bottomMargin = dp(this, 8);
+                list.addView(rowv, lp2);
+            }
         }
         TextView hint = text(this, "แตะรายการเพื่อคัดลอกทีละบรรทัด", 11, false, 0xFF8FA0BD);
         hint.setPadding(dp(this, 4), dp(this, 2), 0, 0);
@@ -529,7 +613,7 @@ public class OrderBubbleService extends Service {
             info.addView(div, dl);
             for (String pl : o.pay.split("\\n")) {
                 String q = pl.trim();
-                if (q.isEmpty()) continue;
+                if (q.isEmpty() || q.startsWith("หมายเหตุ")) continue;
                 int i = q.indexOf(":");
                 LinearLayout pr = row(this);
                 if (i > 0) {
@@ -738,12 +822,67 @@ public class OrderBubbleService extends Service {
         panel.requestFocus();
     }
 
+    /* ================= แจ้งเตือนเก็บกุ้งจากบ่อ ================= */
+
+    private void checkHarvest() {
+        long at = Cloud.harvestAt, ack = Cloud.harvestAck;
+        if (at <= 0) return;
+        if (ack >= at) {                       // รับทราบแล้ว
+            if (harvestPanel) { closePanel(); harvestPanel = false; }
+            return;
+        }
+        if (at > harvestShownAt) {              // สัญญาณใหม่ → เสียง + popup
+            harvestShownAt = at;
+            Alert.start(this);
+            if (mainBubble != null) Fx.bounce(mainBubble);
+            openHarvest();
+        } else if (!harvestPanel && panel == null) {
+            openHarvest();                      // ยังไม่กดรับทราบ → เปิดเตือนซ้ำ
+        }
+    }
+
+    private void openHarvest() {
+        closePanel();
+        harvestPanel = true;
+        panel = col(this);
+        panel.setBackground(glass(this, 0xF5FF6B4A, 24, 0xFFFFFFFF));
+        panel.setPadding(dp(this, 24), dp(this, 22), dp(this, 24), dp(this, 22));
+        panel.setElevation(dp(this, 20));
+
+        TextView big = text(this, "🦐 เก็บกุ้งจากบ่อ!", 30, true, WHITE);
+        big.setGravity(Gravity.CENTER);
+        panel.addView(big, lp(MATCH, WRAP));
+        String when = new java.text.SimpleDateFormat("HH:mm", java.util.Locale.US)
+                .format(new java.util.Date(Cloud.harvestAt - Cloud.offset));
+        TextView sub = text(this, "แจ้งจากมือถือเมื่อ " + when + " น."
+                + (Cloud.harvestEvery > 0 ? "  •  ตั้งอัตโนมัติทุก " + Cloud.harvestEvery + " นาที" : ""), 14, false, 0xFFFFE6D9);
+        sub.setGravity(Gravity.CENTER);
+        sub.setPadding(0, dp(this, 6), 0, 0);
+        panel.addView(sub, lp(MATCH, WRAP));
+
+        TextView ok = button(this, "✓  รับทราบ ไปเก็บกุ้งแล้ว", glass(this, 0xFFFFFFFF, 16, 0), 18);
+        ok.setTextColor(0xFFB3401B);
+        Fx.onTap(ok, () -> {
+            Cloud.harvestAck = Math.max(Cloud.harvestAt, Cloud.now());
+            harvestPanel = false;
+            if (unreadIds.isEmpty()) Alert.stop();
+            new Thread(() -> { try { Cloud.ackHarvest(OrderBubbleService.this); } catch (Exception ignored) {} }).start();
+            closePanel();
+            Toast.makeText(this, "รับทราบแล้ว 🦐", Toast.LENGTH_SHORT).show();
+        });
+        LinearLayout.LayoutParams okl = lp(MATCH, WRAP); okl.topMargin = dp(this, 18);
+        panel.addView(ok, okl);
+
+        showPanel();
+    }
+
     private void closePanel() {
         if (panel != null) {
             try { wm.removeView(panel); } catch (Exception ignored) {}
             panel = null;
         }
         openOrderId = null;
+        harvestPanel = false;
     }
 
     private void copy(String txt, String msg) {
