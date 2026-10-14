@@ -787,41 +787,205 @@ public class OrderBubbleService extends Service {
         svLp.topMargin = dp(this, 12);
         panel.addView(sv, svLp);
 
-        TextView clearDone = button(this, "🧹   ล้างออเดอร์ที่เสร็จแล้ว", glass(this, GLASS, 14, STROKE), 13.5f);
+        LinearLayout bottom = row(this);
+        TextView addLocal = button(this, "➕   คีย์ออเดอร์หน้าเครื่อง", green(this, 14), 13.5f);
+        Fx.onTap(addLocal, this::openAddLocal);
+        bottom.addView(addLocal, lpw(1));
+        TextView clearDone = button(this, "🧹   ล้างที่เสร็จแล้ว", glass(this, GLASS, 14, STROKE), 13.5f);
+        LinearLayout.LayoutParams cdl = lpw(1); cdl.leftMargin = dp(this, 8);
+        Fx.onTap(clearDone, this::clearDone);
+        bottom.addView(clearDone, cdl);
         LinearLayout.LayoutParams cdLp = lp(MATCH, WRAP);
         cdLp.topMargin = dp(this, 10);
-        Fx.onTap(clearDone, this::clearDone);
-        panel.addView(clearDone, cdLp);
+        panel.addView(bottom, cdLp);
 
         showPanel();
     }
 
-    /** 1 แถวในรายการออเดอร์ */
-    private void addOrderRow(LinearLayout list, Order o, boolean done) {
-        LinearLayout rowv = row(this);
-        rowv.setBackground(glass(this, done ? 0x12FFFFFF : 0x1FFFFFFF, 12, done ? 0x22FFFFFF : 0x33FFFFFF));
-        rowv.setPadding(dp(this, 12), dp(this, 11), dp(this, 12), dp(this, 11));
+    /* ================= คีย์ออเดอร์หน้าเครื่อง (ไม่ต้องรอมือถือ) ================= */
 
-        TextView dot = text(this, "●", 15, true, done ? 0xFF22C55E : o.tierColor());
-        dot.setPadding(0, 0, dp(this, 9), 0);
-        rowv.addView(dot);
+    private static final String K_PLACES = "local_places";
 
-        LinearLayout info = col(this);
-        info.addView(text(this, (o.no.isEmpty() ? "ออเดอร์" : "ออเดอร์ที่ " + o.no)
-                + (o.place.isEmpty() ? "" : "  •  " + o.place), 13.5f, true, done ? WHITE_DIM : WHITE));
-        TextView meta = text(this, (done ? "ใช้เวลา " : "รอมา ") + o.waitedMin() + " นาที  •  " + o.status
-                + (o.total > 0 ? "  •  " + o.total + " บาท" : "")
-                + (o.needsAck() ? "  •  ✏️ แก้ไข — รอรับทราบ" : ""), 11.5f, false, o.needsAck() ? 0xFFE9D5FF : WHITE_DIM);
-        meta.setPadding(0, dp(this, 3), 0, 0);
-        info.addView(meta);
-        rowv.addView(info, lpw(1));
+    /** ที่อยู่ที่เคยใช้ (เก็บในเครื่อง + รวมจากออเดอร์บนคลาวด์) ใช้ล่าสุดอยู่บน */
+    private List<String> knownPlaces() {
+        List<String> out = new ArrayList<>();
+        try {
+            org.json.JSONArray arr = new org.json.JSONArray(Cloud.prefs(this).getString(K_PLACES, "[]"));
+            for (int i = arr.length() - 1; i >= 0; i--) { String p = arr.optString(i).trim(); if (!p.isEmpty() && !out.contains(p)) out.add(p); }
+        } catch (Exception ignored) {}
+        for (int i = orders.size() - 1; i >= 0; i--) {
+            String p = orders.get(i).place.trim();
+            if (!p.isEmpty() && !out.contains(p)) out.add(p);
+        }
+        return out;
+    }
 
-        final String oid = o.id;
-        Fx.onTap(rowv, () -> openDetail(oid));
+    private void rememberPlace(String p) {
+        try {
+            org.json.JSONArray arr = new org.json.JSONArray(Cloud.prefs(this).getString(K_PLACES, "[]"));
+            org.json.JSONArray keep = new org.json.JSONArray();
+            for (int i = 0; i < arr.length(); i++) if (!p.equals(arr.optString(i))) keep.put(arr.optString(i));
+            keep.put(p);
+            while (keep.length() > 60) keep.remove(0);
+            Cloud.prefs(this).edit().putString(K_PLACES, keep.toString()).apply();
+        } catch (Exception ignored) {}
+    }
 
-        LinearLayout.LayoutParams rl = lp(MATCH, WRAP);
-        rl.bottomMargin = dp(this, 8);
-        list.addView(rowv, rl);
+    private String addPlace = "";   // ที่อยู่ที่เลือกอยู่ในหน้าคีย์
+
+    /** ขั้น 1: เลือก/ค้นหา/เพิ่มที่อยู่ส่ง */
+    private void openAddLocal() { openAddLocal(""); }
+
+    private void openAddLocal(String query) {
+        closePanel();
+        addPlace = "";
+        panel = col(this);
+        panel.setBackground(glass(this, 0xF51B1F2E, 22, STROKE));
+        panel.setPadding(dp(this, 20), dp(this, 16), dp(this, 20), dp(this, 18));
+        panel.setElevation(dp(this, 18));
+
+        LinearLayout head = row(this);
+        head.addView(text(this, "➕ คีย์ออเดอร์หน้าเครื่อง", 18, true, WHITE), lpw(1));
+        TextView close = chip(this, "✕", false);
+        Fx.onTap(close, this::closePanel);
+        head.addView(close);
+        panel.addView(head, lp(MATCH, WRAP));
+        TextView sub = text(this, "ขั้น 1/2 — เลือกที่อยู่ส่ง (พิมพ์ค้นหา หรือพิมพ์ที่อยู่ใหม่แล้วกด \"ใช้ที่อยู่นี้\")", 12.5f, false, WHITE_DIM);
+        sub.setPadding(0, dp(this, 4), 0, 0);
+        panel.addView(sub);
+
+        final android.widget.EditText search = input(this, "🔍 ค้นหา / พิมพ์ที่อยู่ใหม่");
+        search.setTextSize(17);
+        search.setText(query);
+        search.setSelection(query.length());
+        LinearLayout.LayoutParams sl = lp(MATCH, WRAP); sl.topMargin = dp(this, 12);
+        panel.addView(search, sl);
+
+        final LinearLayout listBox = col(this);
+        final ScrollView sv = new ScrollView(this);
+        sv.addView(listBox);
+        DisplayMetrics dm = getResources().getDisplayMetrics();
+        LinearLayout.LayoutParams svl = lp(MATCH, Math.min(dp(this, 260), (int) (dm.heightPixels * 0.45f)));
+        svl.topMargin = dp(this, 10);
+        panel.addView(sv, svl);
+
+        final Runnable refresh = () -> {
+            listBox.removeAllViews();
+            String q = search.getText().toString().trim();
+            String ql = q.toLowerCase();
+            List<String> all = knownPlaces();
+            // ปุ่มด่วน
+            LinearLayout quick = row(this);
+            for (String qk : new String[]{"หน้าร้าน", "รับเอง", "ไรเดอร์"}) {
+                TextView c = chip(this, qk, false);
+                LinearLayout.LayoutParams cl = lp(WRAP, WRAP); cl.rightMargin = dp(this, 6);
+                final String v = qk;
+                Fx.onTap(c, () -> openAddNote(v));
+                quick.addView(c, cl);
+            }
+            LinearLayout.LayoutParams qll = lp(MATCH, WRAP); qll.bottomMargin = dp(this, 8);
+            listBox.addView(quick, qll);
+
+            if (!q.isEmpty() && !all.contains(q)) {
+                TextView add = button(this, "➕  ใช้ที่อยู่นี้: " + q, green(this, 12), 14);
+                Fx.onTap(add, () -> openAddNote(q));
+                LinearLayout.LayoutParams al = lp(MATCH, WRAP); al.bottomMargin = dp(this, 8);
+                listBox.addView(add, al);
+            }
+            int shown = 0;
+            for (String p : all) {
+                if (!ql.isEmpty() && !p.toLowerCase().contains(ql)) continue;
+                TextView t = text(this, "📍 " + p, 16, true, WHITE);
+                t.setBackground(glass(this, 0x1FFFFFFF, 12, 0x33FFFFFF));
+                t.setPadding(dp(this, 14), dp(this, 12), dp(this, 14), dp(this, 12));
+                final String v = p;
+                Fx.onTap(t, () -> openAddNote(v));
+                LinearLayout.LayoutParams tl = lp(MATCH, WRAP); tl.bottomMargin = dp(this, 6);
+                listBox.addView(t, tl);
+                shown++;
+            }
+            if (shown == 0 && q.isEmpty()) {
+                TextView em = text(this, "ยังไม่มีที่อยู่ที่เคยใช้ — พิมพ์ที่อยู่ด้านบนได้เลย", 12.5f, false, WHITE_DIM);
+                em.setPadding(dp(this, 4), dp(this, 6), 0, 0);
+                listBox.addView(em);
+            }
+        };
+        search.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence c, int a, int b, int d) {}
+            @Override public void onTextChanged(CharSequence c, int a, int b, int d) { refresh.run(); }
+            @Override public void afterTextChanged(android.text.Editable e) {}
+        });
+        refresh.run();
+
+        showPanel();
+        ui.postDelayed(() -> {
+            search.requestFocus();
+            android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+            if (imm != null) imm.showSoftInput(search, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
+        }, 200);
+    }
+
+    /** ขั้น 2: โน้ตเล็กน้อย → ยืนยัน → เริ่มจับเวลา */
+    private void openAddNote(final String place) {
+        closePanel();
+        addPlace = place;
+        panel = col(this);
+        panel.setBackground(glass(this, 0xF51B1F2E, 22, STROKE));
+        panel.setPadding(dp(this, 20), dp(this, 16), dp(this, 20), dp(this, 18));
+        panel.setElevation(dp(this, 18));
+
+        LinearLayout head = row(this);
+        TextView back = chip(this, "‹ กลับ", false);
+        Fx.onTap(back, () -> openAddLocal(""));
+        head.addView(back);
+        TextView title = text(this, "📍 " + place, 18, true, WHITE);
+        title.setPadding(dp(this, 10), 0, 0, 0);
+        head.addView(title, lpw(1));
+        TextView close = chip(this, "✕", false);
+        Fx.onTap(close, this::closePanel);
+        head.addView(close);
+        panel.addView(head, lp(MATCH, WRAP));
+        TextView sub = text(this, "ขั้น 2/2 — โน้ตเล็กน้อย (ไม่ใส่ก็ได้) แล้วกดยืนยัน", 12.5f, false, WHITE_DIM);
+        sub.setPadding(0, dp(this, 4), 0, 0);
+        panel.addView(sub);
+
+        final android.widget.EditText note = input(this, "📝 เช่น กุ้งเผา 1 โล / ไม่ใส่ผัก / โทรก่อนถึง");
+        note.setTextSize(16);
+        LinearLayout.LayoutParams nl = lp(MATCH, WRAP); nl.topMargin = dp(this, 12);
+        panel.addView(note, nl);
+
+        TextView go = button(this, "✓  ยืนยัน — เริ่มจับเวลา", green(this, 16), 18);
+        Fx.onTap(go, () -> {
+            final String n = note.getText().toString().trim();
+            final Order o = new Order();
+            o.place = place;
+            o.lines.add("คีย์ที่เครื่อง POS");
+            if (!n.isEmpty()) o.lines.add("หมายเหตุ : " + n);
+            o.text = "order " + place + "\n(คีย์ที่เครื่อง POS)" + (n.isEmpty() ? "" : "\nหมายเหตุ : " + n);
+            o.pay = n.isEmpty() ? "" : "หมายเหตุ : " + n;
+            o.status = Order.ST_DOING;          // คีย์เองแปลว่ารับแล้ว เริ่มทำเลย
+            rememberPlace(place);
+            closePanel();
+            Toast.makeText(this, "⏱ เริ่มจับเวลา " + place, Toast.LENGTH_SHORT).show();
+            new Thread(() -> {
+                String id = "";
+                try { id = Cloud.push(OrderBubbleService.this, o); } catch (Exception ignored) {}
+                final String fid = id;
+                ui.post(() -> {
+                    if (!fid.isEmpty()) { seenIds.add(fid); seenEdit.put(fid, 0L); }   // ไม่ต้องเตือนตัวเอง
+                    fetchOrders();
+                });
+            }).start();
+        });
+        LinearLayout.LayoutParams gl = lp(MATCH, WRAP); gl.topMargin = dp(this, 14);
+        panel.addView(go, gl);
+
+        showPanel();
+        ui.postDelayed(() -> {
+            note.requestFocus();
+            android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+            if (imm != null) imm.showSoftInput(note, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
+        }, 200);
     }
 
     private void clearDone() {
