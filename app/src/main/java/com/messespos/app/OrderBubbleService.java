@@ -971,9 +971,11 @@ public class OrderBubbleService extends Service {
         final ScrollView sv = new ScrollView(this);
         sv.addView(listBox);
         DisplayMetrics dm = getResources().getDisplayMetrics();
-        LinearLayout.LayoutParams svl = lp(MATCH, Math.min(dp(this, 260), (int) (dm.heightPixels * 0.45f)));
+        LinearLayout.LayoutParams svl = lp(MATCH, (int) (dm.heightPixels * 0.55f));
         svl.topMargin = dp(this, 10);
         panel.addView(sv, svl);
+        // จำนวนคอลัมน์ตามความกว้างจอ: การ์ดละ ~170dp (แท็บเล็ตแนวนอนได้ 5-6 ใบต่อแถว)
+        final int cols = Math.max(2, Math.min(6, (dm.widthPixels - dp(this, 40)) / dp(this, 170)));
 
         final Runnable refresh = () -> {
             listBox.removeAllViews();
@@ -999,16 +1001,31 @@ public class OrderBubbleService extends Service {
                 listBox.addView(add, al);
             }
             int shown = 0;
+            LinearLayout gridRow = null;
             for (String p : all) {
                 if (!ql.isEmpty() && !p.toLowerCase().contains(ql)) continue;
-                TextView t = text(this, "📍 " + p, 16, true, WHITE);
-                t.setBackground(glass(this, 0x1FFFFFFF, 12, 0x33FFFFFF));
-                t.setPadding(dp(this, 14), dp(this, 12), dp(this, 14), dp(this, 12));
+                if (shown % cols == 0) {
+                    gridRow = row(this);
+                    LinearLayout.LayoutParams rl = lp(MATCH, WRAP); rl.bottomMargin = dp(this, 8);
+                    listBox.addView(gridRow, rl);
+                }
+                TextView t = text(this, "📍 " + p, 15, true, WHITE);
+                t.setBackground(glass(this, 0x1FFFFFFF, 14, 0x33FFFFFF));
+                t.setPadding(dp(this, 12), dp(this, 16), dp(this, 12), dp(this, 16));
+                t.setGravity(android.view.Gravity.CENTER);
+                t.setMaxLines(2);
+                t.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                t.setMinHeight(dp(this, 64));
                 final String v = p;
                 Fx.onTap(t, () -> openAddNote(v));
-                LinearLayout.LayoutParams tl = lp(MATCH, WRAP); tl.bottomMargin = dp(this, 6);
-                listBox.addView(t, tl);
+                LinearLayout.LayoutParams tl = lpw(1);
+                if (shown % cols != 0) tl.leftMargin = dp(this, 8);
+                gridRow.addView(t, tl);
                 shown++;
+            }
+            // เติมช่องว่างให้แถวสุดท้ายการ์ดเท่ากัน
+            if (gridRow != null) for (int k = shown % cols; k != 0 && k < cols; k++) {
+                View sp = new View(this); LinearLayout.LayoutParams sl2 = lpw(1); sl2.leftMargin = dp(this, 8); gridRow.addView(sp, sl2);
             }
             if (shown == 0 && q.isEmpty()) {
                 TextView em = text(this, "ยังไม่มีที่อยู่ที่เคยใช้ — พิมพ์ที่อยู่ด้านบนได้เลย", 12.5f, false, WHITE_DIM);
