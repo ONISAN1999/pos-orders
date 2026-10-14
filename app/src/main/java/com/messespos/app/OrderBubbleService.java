@@ -981,7 +981,7 @@ public class OrderBubbleService extends Service {
             em.setGravity(Gravity.CENTER);
             right.setGravity(Gravity.CENTER);
             right.addView(em);
-        } else buildDetail(right, sel);
+        } else buildDetail(right, sel, innerH);
 
         // ----- ท้าย -----
         LinearLayout f = footerOf(main);
@@ -1007,7 +1007,7 @@ public class OrderBubbleService extends Service {
     }
 
     /** รายละเอียดออเดอร์ (ด้านขวา) */
-    private void buildDetail(LinearLayout right, final Order o) {
+    private void buildDetail(LinearLayout right, final Order o, int paneH) {
         // ---- หัว ----
         LinearLayout h = row(this);
         TextView big = text(this, o.place.isEmpty() ? "ออเดอร์" : o.place, 22, true, TXT);
@@ -1052,7 +1052,9 @@ public class OrderBubbleService extends Service {
         sv.setVerticalScrollBarEnabled(false);
         LinearLayout list = col(this);
         sv.addView(list);
-        right.addView(sv, new LinearLayout.LayoutParams(MATCH, 0, 1));
+        // ความสูงรายการ = พื้นที่ทั้งหมด − หัว(64) − บรรทัดย่อย(28) − แถบแจ้งแก้ไข(62 ถ้ามี) − ปุ่ม 2 แถว(124) − ขอบ(32)
+        int listH = Math.max(dp(this, 90), paneH - dp(this, 64 + 28 + (o.needsAck() ? 62 : 0) + 124 + 32));
+        right.addView(sv, new LinearLayout.LayoutParams(MATCH, listH));
 
         java.util.regex.Pattern pricePat = java.util.regex.Pattern.compile("^(.*\\S)\\s+(\\d[\\d,]*)\\s*บาท$");
         final boolean showDiff = o.needsAck() && !o.prevLines.isEmpty();
@@ -1141,24 +1143,28 @@ public class OrderBubbleService extends Service {
         hint.setPadding(dp(this, 2), dp(this, 8), 0, 0);
         list.addView(hint);
 
-        // ---- ปุ่ม ----
-        LinearLayout act = row(this);
-        act.setPadding(0, dp(this, 12), 0, 0);
-        if (!o.place.isEmpty()) {
-            TextView cpP = lbtn("📋 คัดลอกที่อยู่", false);
-            final String plc = o.place;
-            Fx.onCopyTap(cpP, () -> copy(plc, "คัดลอก: " + plc));
-            act.addView(cpP);
-        }
-        TextView cpA = lbtn("📄 ทั้งออเดอร์", false);
-        LinearLayout.LayoutParams cal = lp(WRAP, WRAP); cal.leftMargin = dp(this, 8);
+        // ---- ปุ่ม: แถวบน = คัดลอก (รอง) · แถวล่าง = ปุ่มหลักใหญ่ ----
+        LinearLayout r1 = row(this);
+        r1.setPadding(0, dp(this, 10), 0, 0);
+        TextView cpP = lbtn("📋 คัดลอกที่อยู่", false);
+        cpP.setTextSize(13.5f);
+        if (!o.place.isEmpty()) { final String plc = o.place; Fx.onCopyTap(cpP, () -> copy(plc, "คัดลอก: " + plc)); }
+        else cpP.setAlpha(0.4f);
+        r1.addView(cpP, lpw(1));
+        TextView cpA = lbtn("📄 คัดลอกทั้งออเดอร์", false);
+        cpA.setTextSize(13.5f);
+        LinearLayout.LayoutParams cal = lpw(1); cal.leftMargin = dp(this, 8);
         Fx.onCopyTap(cpA, () -> copy(o.text.isEmpty() ? joinLines(o) : o.text, "คัดลอกออเดอร์แล้ว"));
-        act.addView(cpA, cal);
-        View sp = new View(this); act.addView(sp, lpw(1));
+        r1.addView(cpA, cal);
+        right.addView(r1, lp(MATCH, WRAP));
 
+        LinearLayout r2 = row(this);
+        r2.setPadding(0, dp(this, 8), 0, 0);
         boolean urgent = unreadIds.contains(o.id);
+        int nBtn = 0;
         if (o.needsAck()) {
             TextView ack = lbtnColor("✓ รับทราบการแก้ไข", PURPLE, WHITE, 0);
+            ack.setTextSize(16); ack.setPadding(dp(this, 16), dp(this, 16), dp(this, 16), dp(this, 16));
             if (urgent) startPulse(ack);
             Fx.onTap(ack, () -> {
                 o.ackEditAt = Math.max(o.editedAt, Cloud.now());
@@ -1168,28 +1174,30 @@ public class OrderBubbleService extends Service {
                 rebuildChildren();
                 openWorkspace(tab);
             });
-            LinearLayout.LayoutParams al = lp(WRAP, WRAP); al.leftMargin = dp(this, 8);
-            act.addView(ack, al);
+            r2.addView(ack, lpw(1)); nBtn++;
         }
         if (o.status.equals(Order.ST_NEW)) {
             TextView doing = lbtn(urgent ? "🔥 รับออเดอร์ (หยุดเสียง)" : "🔥 รับออเดอร์", true);
+            doing.setTextSize(16); doing.setPadding(dp(this, 16), dp(this, 16), dp(this, 16), dp(this, 16));
             if (urgent) startPulse(doing);
             Fx.onTap(doing, () -> updateStatus(o, Order.ST_DOING));
-            LinearLayout.LayoutParams dl = lp(WRAP, WRAP); dl.leftMargin = dp(this, 8);
-            act.addView(doing, dl);
+            LinearLayout.LayoutParams dl = lpw(1); if (nBtn > 0) dl.leftMargin = dp(this, 8);
+            r2.addView(doing, dl); nBtn++;
         }
         if (!o.status.equals(Order.ST_DONE)) {
-            TextView done = lbtnColor("✅ เสร็จแล้ว", CARD, GREEN_C, GREEN_C);
+            boolean primaryDone = nBtn == 0;   // กำลังทำอยู่ → "เสร็จแล้ว" เป็นปุ่มหลัก
+            TextView done = primaryDone ? lbtnColor("✅ เสร็จแล้ว — ส่งออก", GREEN_C, WHITE, 0) : lbtnColor("✅ เสร็จแล้ว", CARD, GREEN_C, GREEN_C);
+            done.setTextSize(16); done.setPadding(dp(this, 16), dp(this, 16), dp(this, 16), dp(this, 16));
             Fx.onTap(done, () -> updateStatus(o, Order.ST_DONE));
-            LinearLayout.LayoutParams dnl = lp(WRAP, WRAP); dnl.leftMargin = dp(this, 8);
-            act.addView(done, dnl);
+            LinearLayout.LayoutParams dnl = lpw(1); if (nBtn > 0) dnl.leftMargin = dp(this, 8);
+            r2.addView(done, dnl); nBtn++;
         } else {
             TextView re = lbtnColor("↩ เปิดใหม่ (กำลังทำ)", CARD, ORANGE, ORANGE);
+            re.setTextSize(16); re.setPadding(dp(this, 16), dp(this, 16), dp(this, 16), dp(this, 16));
             Fx.onTap(re, () -> updateStatus(o, Order.ST_DOING));
-            LinearLayout.LayoutParams dnl = lp(WRAP, WRAP); dnl.leftMargin = dp(this, 8);
-            act.addView(re, dnl);
+            r2.addView(re, lpw(1));
         }
-        right.addView(act, lp(MATCH, WRAP));
+        right.addView(r2, lp(MATCH, WRAP));
     }
 
     private TextView itemName(String s) {
