@@ -454,12 +454,13 @@ public class OrderBubbleService extends Service {
                             seenEdit.put(o.id, o.editedAt);
                             if (!firstSight && o.needsAck()) { unreadIds.add(o.id); isNew = true; }
                         }
-                        if (o.status.equals(Order.ST_DONE)) continue;
+                        if (o.status.equals(Order.ST_DONE)) { unreadIds.remove(o.id); continue; }
                         if (!seenIds.contains(o.id)) {
                             seenIds.add(o.id);
-                            unreadIds.add(o.id);
-                            isNew = true;
+                            if (o.status.equals(Order.ST_NEW) || o.needsAck()) { unreadIds.add(o.id); isNew = true; }
                         }
+                        // รับไปแล้วจากที่อื่น / ไม่มีการแก้ไขค้าง → เลิกเตือน
+                        if (unreadIds.contains(o.id) && !o.status.equals(Order.ST_NEW) && !o.needsAck()) unreadIds.remove(o.id);
                     }
                     orders = got;
                     rebuildChildren();
@@ -495,7 +496,7 @@ public class OrderBubbleService extends Service {
         if (found == null) return;
         final Order o = found;
         openOrderId = id;
-        markRead(id);          // กดอ่านแล้ว → เงียบ
+        // เปิดดูเฉยๆ ไม่ถือว่ารับ — เสียงจะเงียบเมื่อกด "รับออเดอร์" หรือ "รับทราบการแก้ไข" เท่านั้น
 
         closePanel();
         panel = col(this);
@@ -537,9 +538,12 @@ public class OrderBubbleService extends Service {
             ac.addView(text(this, "✏️ ออเดอร์นี้ถูกแก้ไขจากมือถือ", 15, true, 0xFFE9D5FF));
             ac.addView(text(this, "ตรวจรายการใหม่อีกครั้ง แล้วกดรับทราบ", 12, false, WHITE_DIM));
             ab.addView(ac, lpw(1));
-            TextView ack = button(this, "✓ รับทราบการแก้ไข", glass(this, 0xFF7C3AED, 14, 0), 14);
+            TextView ack = button(this, "✓ รับทราบการแก้ไข", glass(this, 0xFF7C3AED, 14, 0xFFFFFFFF), 15);
+            ack.setPadding(dp(this, 16), dp(this, 14), dp(this, 16), dp(this, 14));
+            startPulse(ack);
             Fx.onTap(ack, () -> {
                 o.ackEditAt = Math.max(o.editedAt, Cloud.now());
+                if (!o.status.equals(Order.ST_NEW)) markRead(o.id);
                 new Thread(() -> { try { Cloud.ackEdit(OrderBubbleService.this, o.id); } catch (Exception ignored) {} }).start();
                 Toast.makeText(this, "รับทราบการแก้ไขแล้ว", Toast.LENGTH_SHORT).show();
                 rebuildChildren();
@@ -697,7 +701,10 @@ public class OrderBubbleService extends Service {
         side.addView(spacer, lpw(1));
 
         if (!o.status.equals(Order.ST_DOING)) {
-            TextView doing = button(this, "🔥  รับออเดอร์ / กำลังทำ", glass(this, 0x59F97316, 14, 0x99F97316), 15);
+            boolean urgent = unreadIds.contains(o.id);
+            TextView doing = button(this, urgent ? "🔥  กดรับออเดอร์  (เพื่อหยุดเสียง)" : "🔥  รับออเดอร์ / กำลังทำ",
+                    glass(this, urgent ? 0xFFF97316 : 0x59F97316, 14, urgent ? 0xFFFFFFFF : 0x99F97316), urgent ? 17 : 15);
+            if (urgent) { doing.setPadding(dp(this, 14), dp(this, 18), dp(this, 14), dp(this, 18)); startPulse(doing); }
             Fx.onTap(doing, () -> updateStatus(o, Order.ST_DOING));
             LinearLayout.LayoutParams dl = lp(MATCH, WRAP); dl.topMargin = dp(this, 10);
             side.addView(doing, dl);
@@ -739,6 +746,7 @@ public class OrderBubbleService extends Service {
 
     private void updateStatus(Order o, String status) {
         o.status = status;
+        if (!o.needsAck()) markRead(o.id);   // กดรับออเดอร์ = รับทราบ → เงียบ
         if (Cloud.ready(this)) {
             final String id = o.id;
             new Thread(() -> {
@@ -757,7 +765,6 @@ public class OrderBubbleService extends Service {
     /* ================= รายการออเดอร์ทั้งหมด ================= */
 
     private void openList() {
-        markRead(null);        // เปิดรายการ = อ่านทั้งหมด → เงียบ
         closePanel();
         panel = col(this);
         panel.setBackground(glass(this, 0xF51B1F2E, 22, STROKE));
