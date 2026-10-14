@@ -61,8 +61,13 @@ jobs:
         run: |
           mkdir -p dist
           cp POSOrders.apk dist/POSOrders.apk
+          VC=$(grep -oP 'versionCode\s+\K\d+' app/build.gradle)
+          VN=$(grep -oP 'versionName\s+"\K[^"]+' app/build.gradle)
+          NOTES=$(cat dist/notes.txt 2>/dev/null | head -c 300 | tr '\n' ' ' | sed 's/"/\\"/g')
+          printf '{"versionCode":%s,"versionName":"%s","build":%s,"apk":"https://raw.githubusercontent.com/ONISAN1999/pos-orders/main/dist/POSOrders.apk","notes":"%s","at":"%s"}\n' "$VC" "$VN" "${{ github.run_number }}" "$NOTES" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > dist/version.json
+          cat dist/version.json
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git add dist/POSOrders.apk
+          git add dist/POSOrders.apk dist/version.json
           git commit -m "dist: POSOrders.apk build ${{ github.run_number }} [skip ci]" || exit 0
           git push
