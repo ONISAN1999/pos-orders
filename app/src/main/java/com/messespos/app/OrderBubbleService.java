@@ -556,254 +556,555 @@ public class OrderBubbleService extends Service {
         refreshMain();
     }
 
-    /* ================= Popup รายละเอียด ================= */
+    /* ================= หน้าจอทำงาน (ธีมสว่าง: แถบเมนูซ้าย + รายการ/รายละเอียด) ================= */
 
-    private void openDetail(String id) {
-        Order found = null;
-        for (Order o : orders) if (o.id.equals(id)) found = o;
-        if (found == null) return;
-        final Order o = found;
-        openOrderId = id;
-        // เปิดดูเฉยๆ ไม่ถือว่ารับ — เสียงจะเงียบเมื่อกด "รับออเดอร์" หรือ "รับทราบการแก้ไข" เท่านั้น
+    // จานสีธีมสว่าง
+    private static final int BG = 0xFFF4F5F7, CARD = 0xFFFFFFFF, LINE_C = 0xFFE3E5EA, TXT = 0xFF1F2430, MUTED = 0xFF8A91A0;
+    private static final int ORANGE = 0xFFF05A28, ORANGE_SOFT = 0xFFFFF1E8, GREEN_C = 0xFF139A4B, GREEN_SOFT = 0xFFE6F8EE;
+    private static final int PURPLE = 0xFF7C3AED, PURPLE_SOFT = 0xFFEFE9FF, RED_C = 0xFFEF4444, RED_SOFT = 0xFFFEE2E2, YEL_SOFT = 0xFFFFFBE6, YEL_LINE = 0xFFFDE68A;
 
+    private static final int T_ORDERS = 0, T_ADD = 1, T_HIST = 2, T_HARV = 3, T_SET = 4;
+    private int tab = T_ORDERS;
+    private String selId = null;      // ออเดอร์ที่เลือกดูรายละเอียด
+    private int listFilter = 0;       // 0 กำลังทำ / 1 เสร็จแล้ว / 2 ทั้งหมด
+    private int addStep = 0;          // 0 เลือกที่อยู่ / 1 โน้ต
+    private String addQuery = "";
+    private String addPlace = "";
+
+    private GradientDrawable card(float r) { return glass(this, CARD, r, LINE_C); }
+    private GradientDrawable fill(int color, float r) { return glass(this, color, r, 0); }
+
+    private TextView lchip(String s, int bg, int fg) {
+        TextView t = text(this, s, 12.5f, true, fg);
+        t.setGravity(Gravity.CENTER);
+        t.setPadding(dp(this, 13), dp(this, 7), dp(this, 13), dp(this, 7));
+        t.setBackground(fill(bg, 999));
+        return t;
+    }
+
+    /** ปุ่มใหญ่: primary = พื้นส้ม / ไม่ใช่ = ขอบขาว */
+    private TextView lbtn(String s, boolean primary) {
+        TextView t = text(this, s, 15, true, primary ? WHITE : TXT);
+        t.setGravity(Gravity.CENTER);
+        t.setPadding(dp(this, 22), dp(this, 13), dp(this, 22), dp(this, 13));
+        t.setBackground(primary ? fill(ORANGE, 12) : glass(this, CARD, 12, 0xFFDFE2E8));
+        return t;
+    }
+
+    private TextView lbtnColor(String s, int bg, int fg, int stroke) {
+        TextView t = text(this, s, 15, true, fg);
+        t.setGravity(Gravity.CENTER);
+        t.setPadding(dp(this, 22), dp(this, 13), dp(this, 22), dp(this, 13));
+        t.setBackground(glass(this, bg, 12, stroke));
+        return t;
+    }
+
+    private android.widget.EditText linput(String hint) {
+        android.widget.EditText e = new android.widget.EditText(this);
+        e.setHint(hint);
+        e.setHintTextColor(0xFF9AA1AE);
+        e.setTextColor(TXT);
+        e.setTextSize(16);
+        e.setBackground(glass(this, CARD, 12, 0xFFDFE2E8));
+        e.setPadding(dp(this, 16), dp(this, 12), dp(this, 16), dp(this, 12));
+        return e;
+    }
+
+    /** กล่องเวลา (สี่เหลี่ยมมน) สีตามระดับเวลา */
+    private LinearLayout timeBox(Order o, int sizeDp) {
+        LinearLayout b = col(this);
+        b.setGravity(Gravity.CENTER);
+        boolean done = o.status.equals(Order.ST_DONE);
+        b.setBackground(fill(done ? 0xFF9AA1AE : o.tierColor(), 12));
+        TextView n = text(this, done ? "✓" : String.valueOf(o.waitedMin()), sizeDp >= 64 ? 20 : 17, true, WHITE);
+        n.setGravity(Gravity.CENTER);
+        b.addView(n);
+        if (!done) {
+            TextView u = text(this, "นาที", 10, false, WHITE);
+            u.setGravity(Gravity.CENTER);
+            b.addView(u);
+        }
+        return b;
+    }
+
+    private TextView statusTag(Order o) {
+        boolean unread = unreadIds.contains(o.id);
+        if (o.needsAck()) return lchip("แก้ไข", PURPLE_SOFT, PURPLE);
+        if (o.status.equals(Order.ST_DONE)) return lchip("เสร็จ", 0xFFEEF0F3, MUTED);
+        if (o.status.equals(Order.ST_NEW) || unread) return lchip("ใหม่", ORANGE_SOFT, ORANGE);
+        return lchip("กำลังทำ", GREEN_SOFT, GREEN_C);
+    }
+
+    private String clockOf(long t) {
+        return new java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(new java.util.Date(t - Cloud.offset));
+    }
+
+    /** เปิดหน้าจอทำงานที่แท็บที่ระบุ */
+    private void openWorkspace(int t) {
         closePanel();
-        panel = col(this);
-        panel.setBackground(glass(this, 0xF51B1F2E, 22, STROKE));
-        panel.setPadding(dp(this, 20), dp(this, 16), dp(this, 20), dp(this, 16));
-        panel.setElevation(dp(this, 18));
-
+        tab = t;
         DisplayMetrics dm = getResources().getDisplayMetrics();
-        boolean wide = dm.widthPixels > dm.heightPixels;   // จอ POS แนวนอน → 2 คอลัมน์
+        int W = Math.min(dm.widthPixels - dp(this, 12), dp(this, 1180));
+        int H = Math.min(dm.heightPixels - dp(this, 12), dp(this, 760));
 
-        // ---------- หัว ----------
-        LinearLayout head = row(this);
-        head.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout titleCol = col(this);
-        titleCol.addView(text(this, (o.no.isEmpty() ? "ออเดอร์" : "ออเดอร์ #" + o.no)
-                + (o.place.isEmpty() ? "" : "  •  " + o.place), 22, true, WHITE));
-        TextView sub = text(this, "รอมาแล้ว " + o.waitedMin() + " นาที", 13, false, WHITE_DIM);
-        sub.setPadding(0, dp(this, 3), 0, 0);
-        titleCol.addView(sub);
-        head.addView(titleCol, lpw(1));
+        LinearLayout root = row(this);
+        root.setGravity(Gravity.TOP);
+        root.setBackground(glass(this, BG, 18, LINE_C));
+        root.setClipToOutline(true);
+        root.setElevation(dp(this, 18));
 
-        TextView stChip = chip(this, o.status, false);
-        stChip.setBackground(glass(this, o.status.equals(Order.ST_DOING) ? 0x59F97316 : 0x33FFFFFF, 20,
-                o.status.equals(Order.ST_DOING) ? 0x99F97316 : 0x55FFFFFF));
-        head.addView(stChip);
-        TextView close = chip(this, "✕", false);
-        LinearLayout.LayoutParams clp = lp(WRAP, WRAP); clp.leftMargin = dp(this, 8);
-        close.setLayoutParams(clp);
-        Fx.onTap(close, this::closePanel);
-        head.addView(close);
-        panel.addView(head, lp(MATCH, WRAP));
+        root.addView(sidebar(), new LinearLayout.LayoutParams(dp(this, 84), MATCH));
+        View div = new View(this); div.setBackgroundColor(LINE_C);
+        root.addView(div, new LinearLayout.LayoutParams(dp(this, 1), MATCH));
 
-        // ---------- แจ้งว่าออเดอร์ถูกแก้ไข ----------
-        if (o.needsAck()) {
-            LinearLayout ab = row(this);
-            ab.setBackground(glass(this, 0x33A78BFA, 14, 0x99A78BFA));
-            ab.setPadding(dp(this, 14), dp(this, 10), dp(this, 10), dp(this, 10));
-            LinearLayout ac = col(this);
-            ac.addView(text(this, "✏️ ออเดอร์นี้ถูกแก้ไขจากมือถือ", 15, true, 0xFFE9D5FF));
-            ac.addView(text(this, "ตรวจรายการใหม่อีกครั้ง แล้วกดรับทราบ", 12, false, WHITE_DIM));
-            ab.addView(ac, lpw(1));
-            TextView ack = button(this, "✓ รับทราบการแก้ไข", glass(this, 0xFF7C3AED, 14, 0xFFFFFFFF), 15);
-            ack.setPadding(dp(this, 16), dp(this, 14), dp(this, 16), dp(this, 14));
-            startPulse(ack);
-            Fx.onTap(ack, () -> {
-                o.ackEditAt = Math.max(o.editedAt, Cloud.now());
-                if (!o.status.equals(Order.ST_NEW)) markRead(o.id);
-                new Thread(() -> { try { Cloud.ackEdit(OrderBubbleService.this, o.id); } catch (Exception ignored) {} }).start();
-                Toast.makeText(this, "รับทราบการแก้ไขแล้ว", Toast.LENGTH_SHORT).show();
-                rebuildChildren();
-                openDetail(o.id);
-            });
-            ab.addView(ack);
-            LinearLayout.LayoutParams abl = lp(MATCH, WRAP); abl.topMargin = dp(this, 12);
-            panel.addView(ab, abl);
+        LinearLayout main = col(this);
+        root.addView(main, new LinearLayout.LayoutParams(0, MATCH, 1));
+
+        switch (tab) {
+            case T_ADD:  buildAddTab(main); break;
+            case T_HARV: buildHarvestTab(main); break;
+            case T_SET:  buildSettingsTab(main); break;
+            default:     buildOrdersTab(main); break;
         }
 
-        // ---------- รายการ (ซ้าย) ----------
+        panel = root;
+        showPanel(W, H);
+    }
+
+    private View sidebar() {
+        LinearLayout s = col(this);
+        s.setBackgroundColor(CARD);
+        s.setGravity(Gravity.CENTER_HORIZONTAL);
+        s.setPadding(0, dp(this, 12), 0, dp(this, 12));
+        String[][] items = {{"🧾", "ออเดอร์"}, {"➕", "คีย์เอง"}, {"📋", "ประวัติ"}, {"🦐", "เก็บกุ้ง"}, {"⚙️", "ตั้งค่า"}};
+        int[] ids = {T_ORDERS, T_ADD, T_HIST, T_HARV, T_SET};
+        for (int i = 0; i < items.length; i++) {
+            final int id = ids[i];
+            boolean on = tab == id;
+            LinearLayout it = col(this);
+            it.setGravity(Gravity.CENTER);
+            it.setBackground(on ? fill(ORANGE_SOFT, 12) : null);
+            TextView ic = text(this, items[i][0], 22, false, TXT);
+            ic.setGravity(Gravity.CENTER);
+            it.addView(ic);
+            TextView lb = text(this, items[i][1], 11, on, on ? ORANGE : 0xFF6B7280);
+            lb.setGravity(Gravity.CENTER);
+            lb.setPadding(0, dp(this, 3), 0, 0);
+            it.addView(lb);
+            // ป้ายจำนวนยังไม่อ่าน / สัญญาณเก็บกุ้งค้าง
+            int badge = id == T_ORDERS ? unreadIds.size() : id == T_HARV && Cloud.harvestAt > 0 && Cloud.harvestAck < Cloud.harvestAt ? 1 : 0;
+            if (badge > 0) {
+                TextView bd = text(this, id == T_HARV ? "!" : String.valueOf(badge), 10, true, WHITE);
+                bd.setGravity(Gravity.CENTER);
+                bd.setBackground(fill(RED_C, 999));
+                bd.setPadding(dp(this, 6), dp(this, 1), dp(this, 6), dp(this, 1));
+                LinearLayout.LayoutParams bl = lp(WRAP, WRAP); bl.topMargin = dp(this, 2);
+                it.addView(bd, bl);
+            }
+            LinearLayout.LayoutParams il = lp(dp(this, 66), dp(this, badge > 0 ? 78 : 62)); il.bottomMargin = dp(this, 6);
+            Fx.onTap(it, () -> {
+                if (id == T_ADD) { addStep = 0; addQuery = ""; }
+                if (id == T_HIST) listFilter = 1; else if (id == T_ORDERS && listFilter == 1) listFilter = 0;
+                openWorkspace(id);
+            });
+            s.addView(it, il);
+        }
+        View sp = new View(this);
+        s.addView(sp, new LinearLayout.LayoutParams(MATCH, 0, 1));
+        TextView v = text(this, ver(this), 10, false, MUTED);
+        v.setGravity(Gravity.CENTER);
+        s.addView(v);
+        return s;
+    }
+
+    /** แถบบน: ชื่อหน้า + ป้าย + สถานะคลาวด์ + ปุ่มปิด */
+    private LinearLayout topBar(LinearLayout main, String title) {
+        LinearLayout top = row(this);
+        top.setBackgroundColor(CARD);
+        top.setPadding(dp(this, 22), 0, dp(this, 14), 0);
+        top.addView(text(this, title, 18, true, TXT));
+        main.addView(top, lp(MATCH, dp(this, 60)));
+        View div = new View(this); div.setBackgroundColor(LINE_C);
+        main.addView(div, lp(MATCH, dp(this, 1)));
+        return top;
+    }
+
+    private void topBarEnd(LinearLayout top) {
+        View sp = new View(this);
+        top.addView(sp, lpw(1));
+        long age = Cloud.lastOk == 0 ? Long.MAX_VALUE : System.currentTimeMillis() - Cloud.lastOk;
+        int dotc = age < 20000 ? 0xFF22C55E : age < 60000 ? 0xFFFACC15 : RED_C;
+        TextView dot = text(this, "", 1, false, 0);
+        dot.setBackground(fill(dotc, 999));
+        LinearLayout.LayoutParams dl = lp(dp(this, 9), dp(this, 9)); dl.rightMargin = dp(this, 6);
+        top.addView(dot, dl);
+        String when = Cloud.synced() ? clockOf(Cloud.now()) : new java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(new java.util.Date());
+        TextView st = text(this, (age < 60000 ? "คลาวด์ปกติ" : "คลาวด์หลุด") + " · " + when, 12, false, 0xFF6B7280);
+        top.addView(st);
+        TextView refresh = lchip("⟳", 0xFFF1F2F5, TXT);
+        LinearLayout.LayoutParams rl = lp(WRAP, WRAP); rl.leftMargin = dp(this, 10);
+        Fx.onTap(refresh, () -> { fetchOrders(); ui.postDelayed(() -> { if (panel != null) openWorkspace(tab); }, 900); });
+        top.addView(refresh, rl);
+        TextView close = lchip("✕", 0xFFF1F2F5, TXT);
+        LinearLayout.LayoutParams cl = lp(WRAP, WRAP); cl.leftMargin = dp(this, 6);
+        Fx.onTap(close, this::closePanel);
+        top.addView(close, cl);
+    }
+
+    private LinearLayout bodyOf(LinearLayout main) {
+        LinearLayout body = col(this);
+        body.setPadding(dp(this, 18), dp(this, 16), dp(this, 18), dp(this, 16));
+        main.addView(body, new LinearLayout.LayoutParams(MATCH, 0, 1));
+        return body;
+    }
+
+    private LinearLayout footerOf(LinearLayout main) {
+        View div = new View(this); div.setBackgroundColor(LINE_C);
+        main.addView(div, lp(MATCH, dp(this, 1)));
+        LinearLayout f = row(this);
+        f.setBackgroundColor(CARD);
+        f.setPadding(dp(this, 18), dp(this, 10), dp(this, 18), dp(this, 10));
+        main.addView(f, lp(MATCH, WRAP));
+        return f;
+    }
+
+    /* ---------- แท็บ ออเดอร์ / ประวัติ ---------- */
+
+    private void buildOrdersTab(LinearLayout main) {
+        boolean hist = tab == T_HIST;
+        List<Order> act = new ArrayList<>(), done = new ArrayList<>();
+        for (Order o : orders) { if (o.status.equals(Order.ST_DONE)) done.add(o); else act.add(o); }
+        java.util.Collections.sort(act, (a, b) -> Long.compare(a.createdAt, b.createdAt));            // รอนานสุดอยู่บน
+        java.util.Collections.sort(done, (a, b) -> Long.compare(Math.max(b.editedAt, b.createdAt), Math.max(a.editedAt, a.createdAt)));
+
+        LinearLayout top = topBar(main, hist ? "ประวัติออเดอร์" : "ออเดอร์วันนี้");
+        TextView p1 = lchip("กำลังทำ " + act.size(), ORANGE, WHITE);
+        LinearLayout.LayoutParams l1 = lp(WRAP, WRAP); l1.leftMargin = dp(this, 14);
+        top.addView(p1, l1);
+        TextView p2 = lchip("เสร็จ " + done.size(), GREEN_SOFT, GREEN_C);
+        LinearLayout.LayoutParams l2 = lp(WRAP, WRAP); l2.leftMargin = dp(this, 8);
+        top.addView(p2, l2);
+        topBarEnd(top);
+
+        LinearLayout body = bodyOf(main);
+        LinearLayout cols = row(this);
+        cols.setGravity(Gravity.TOP);
+        body.addView(cols, new LinearLayout.LayoutParams(MATCH, 0, 1));
+
+        // ----- ซ้าย: รายการ -----
+        LinearLayout left = col(this);
+        DisplayMetrics dm = getResources().getDisplayMetrics();
+        int leftW = Math.min(dp(this, 400), (int) (dm.widthPixels * 0.38f));
+        cols.addView(left, new LinearLayout.LayoutParams(leftW, MATCH));
+
+        int filter = hist ? 1 : listFilter;
+        if (!hist) {
+            LinearLayout seg = row(this);
+            seg.setBackground(card(12));
+            seg.setPadding(dp(this, 4), dp(this, 4), dp(this, 4), dp(this, 4));
+            String[] names = {"กำลังทำ", "เสร็จแล้ว", "ทั้งหมด"};
+            for (int i = 0; i < 3; i++) {
+                final int fi = i;
+                TextView sgt = text(this, names[i], 13.5f, true, filter == i ? WHITE : 0xFF6B7280);
+                sgt.setGravity(Gravity.CENTER);
+                sgt.setPadding(0, dp(this, 9), 0, dp(this, 9));
+                sgt.setBackground(filter == i ? fill(ORANGE, 9) : null);
+                Fx.onTap(sgt, () -> { listFilter = fi; openWorkspace(T_ORDERS); });
+                seg.addView(sgt, lpw(1));
+            }
+            LinearLayout.LayoutParams sl = lp(MATCH, WRAP); sl.bottomMargin = dp(this, 10);
+            left.addView(seg, sl);
+        }
+
+        List<Order> show = new ArrayList<>();
+        if (filter == 0) show.addAll(act);
+        else if (filter == 1) show.addAll(done);
+        else { show.addAll(act); show.addAll(done); }
+
+        // ออเดอร์ที่เลือก: ถ้าไม่มี/ไม่อยู่ในรายการ → เลือกตัวแรก
+        Order sel = null;
+        for (Order o : show) if (o.id.equals(selId)) sel = o;
+        if (sel == null && !show.isEmpty()) { sel = show.get(0); selId = sel.id; }
+
         ScrollView sv = new ScrollView(this);
+        sv.setVerticalScrollBarEnabled(false);
         LinearLayout list = col(this);
+        sv.addView(list);
+        left.addView(sv, new LinearLayout.LayoutParams(MATCH, 0, 1));
+
+        if (!Cloud.ready(this)) {
+            TextView warn = text(this, "ยังไม่ได้ตั้งค่าคลาวด์ — เปิดแอป POS ออเดอร์ แล้วใส่ลิงก์ฐานข้อมูลก่อน", 13, false, ORANGE);
+            warn.setPadding(dp(this, 4), dp(this, 10), 0, 0);
+            list.addView(warn);
+        } else if (show.isEmpty()) {
+            TextView em = text(this, filter == 0 ? "ไม่มีออเดอร์ค้าง 🎉" : "ยังไม่มีออเดอร์", 14, false, MUTED);
+            em.setPadding(dp(this, 4), dp(this, 14), 0, 0);
+            list.addView(em);
+        }
+        for (Order o : show) {
+            final boolean isSel = sel != null && o.id.equals(sel.id);
+            LinearLayout rowv = row(this);
+            rowv.setBackground(glass(this, CARD, 14, isSel ? ORANGE : LINE_C));
+            rowv.setPadding(dp(this, 12), dp(this, 10), dp(this, 12), dp(this, 10));
+            if (o.status.equals(Order.ST_DONE) && filter != 1) rowv.setAlpha(0.6f);
+            LinearLayout.LayoutParams tl = lp(dp(this, 54), dp(this, 54)); tl.rightMargin = dp(this, 12);
+            rowv.addView(timeBox(o, 54), tl);
+            LinearLayout info = col(this);
+            TextView nm = text(this, o.place.isEmpty() ? (o.by.equals("pos") ? "คีย์ที่เครื่อง" : "ออเดอร์") : o.place, 16, true, TXT);
+            nm.setSingleLine(true); nm.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            info.addView(nm);
+            String meta = (o.no.isEmpty() ? (o.by.equals("pos") ? "คีย์เอง" : "") : "#" + o.no) + " · " + clockOf(o.createdAt)
+                    + (o.total > 0 ? " · " + o.total + " บาท" : "") + (o.pay.isEmpty() ? "" : " · " + firstPay(o));
+            TextView mt = text(this, meta.startsWith(" · ") ? meta.substring(3) : meta, 12, false, MUTED);
+            mt.setSingleLine(true); mt.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            mt.setPadding(0, dp(this, 3), 0, 0);
+            info.addView(mt);
+            rowv.addView(info, lpw(1));
+            TextView tg = statusTag(o);
+            LinearLayout.LayoutParams tgl = lp(WRAP, WRAP); tgl.leftMargin = dp(this, 8);
+            rowv.addView(tg, tgl);
+            final String oid = o.id;
+            Fx.onTap(rowv, () -> { selId = oid; openWorkspace(tab); });
+            LinearLayout.LayoutParams rl = lp(MATCH, WRAP); rl.bottomMargin = dp(this, 8);
+            list.addView(rowv, rl);
+        }
+
+        // ----- ขวา: รายละเอียด -----
+        LinearLayout right = col(this);
+        right.setBackground(card(16));
+        right.setPadding(dp(this, 20), dp(this, 16), dp(this, 20), dp(this, 16));
+        LinearLayout.LayoutParams rl = new LinearLayout.LayoutParams(0, MATCH, 1); rl.leftMargin = dp(this, 16);
+        cols.addView(right, rl);
+        if (sel == null) {
+            TextView em = text(this, "เลือกออเดอร์จากรายการด้านซ้าย", 15, false, MUTED);
+            em.setGravity(Gravity.CENTER);
+            right.setGravity(Gravity.CENTER);
+            right.addView(em);
+        } else buildDetail(right, sel);
+
+        // ----- ท้าย -----
+        LinearLayout f = footerOf(main);
+        TextView add = lbtn("➕  คีย์ออเดอร์หน้าเครื่อง", true);
+        Fx.onTap(add, () -> openAddLocal(""));
+        f.addView(add);
+        View sp = new View(this); f.addView(sp, lpw(1));
+        if (hist || filter != 0) {
+            TextView arch = lbtn("🗄  เก็บที่เสร็จแล้วเข้าคลัง (" + done.size() + ")", false);
+            Fx.onTap(arch, this::clearDone);
+            f.addView(arch);
+        }
+    }
+
+    private String firstPay(Order o) {
+        for (String pl : o.pay.split("\\n")) {
+            String q = pl.trim();
+            if (q.isEmpty() || q.startsWith("หมายเหตุ")) continue;
+            int i = q.indexOf(":");
+            return i > 0 ? q.substring(i + 1).trim() : q;
+        }
+        return "";
+    }
+
+    /** รายละเอียดออเดอร์ (ด้านขวา) */
+    private void buildDetail(LinearLayout right, final Order o) {
+        // ---- หัว ----
+        LinearLayout h = row(this);
+        TextView big = text(this, o.place.isEmpty() ? "ออเดอร์" : o.place, 22, true, TXT);
+        big.setSingleLine(true); big.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        h.addView(big, new LinearLayout.LayoutParams(0, WRAP, 1));
+        if (!o.no.isEmpty()) {
+            TextView no = lchip("#" + o.no, 0xFFF1F2F5, TXT);
+            LinearLayout.LayoutParams nl = lp(WRAP, WRAP); nl.leftMargin = dp(this, 10);
+            h.addView(no, nl);
+        }
+        TextView st = statusTag(o);
+        LinearLayout.LayoutParams stl = lp(WRAP, WRAP); stl.leftMargin = dp(this, 8);
+        h.addView(st, stl);
+        if (o.needsAck()) {
+            TextView ed = lchip("✏️ แก้ไขจากมือถือ " + clockOf(o.editedAt), PURPLE_SOFT, PURPLE);
+            LinearLayout.LayoutParams el = lp(WRAP, WRAP); el.leftMargin = dp(this, 8);
+            h.addView(ed, el);
+        }
+        LinearLayout.LayoutParams tl = lp(dp(this, 64), dp(this, 64)); tl.leftMargin = dp(this, 14);
+        h.addView(timeBox(o, 64), tl);
+        right.addView(h, lp(MATCH, WRAP));
+        TextView sub = text(this, "สั่งเมื่อ " + clockOf(o.createdAt) + " น." + (o.status.equals(Order.ST_DONE) ? "" : " · รอมาแล้ว " + o.waitedMin() + " นาที")
+                + (o.by.equals("pos") ? " · คีย์ที่เครื่อง" : " · จากมือถือ"), 12.5f, false, MUTED);
+        sub.setPadding(0, dp(this, 4), 0, dp(this, 8));
+        right.addView(sub);
+
+        // ---- แจ้งแก้ไข ----
+        if (o.needsAck()) {
+            LinearLayout ab = row(this);
+            ab.setBackground(glass(this, PURPLE_SOFT, 12, 0xFFD8CCFA));
+            ab.setPadding(dp(this, 14), dp(this, 10), dp(this, 10), dp(this, 10));
+            LinearLayout ac = col(this);
+            ac.addView(text(this, "ออเดอร์นี้ถูกแก้ไขจากมือถือ", 14.5f, true, PURPLE));
+            ac.addView(text(this, "แถวสีม่วง = เปลี่ยน · แถวสีแดงขีดฆ่า = ตัดออก · ตรวจแล้วกดรับทราบ", 12, false, 0xFF6B7280));
+            ab.addView(ac, lpw(1));
+            LinearLayout.LayoutParams abl = lp(MATCH, WRAP); abl.bottomMargin = dp(this, 8);
+            right.addView(ab, abl);
+        }
+
+        // ---- รายการ ----
+        ScrollView sv = new ScrollView(this);
+        sv.setVerticalScrollBarEnabled(false);
+        LinearLayout list = col(this);
+        sv.addView(list);
+        right.addView(sv, new LinearLayout.LayoutParams(MATCH, 0, 1));
+
         java.util.regex.Pattern pricePat = java.util.regex.Pattern.compile("^(.*\\S)\\s+(\\d[\\d,]*)\\s*บาท$");
         final boolean showDiff = o.needsAck() && !o.prevLines.isEmpty();
         java.util.Set<String> prevSet = new java.util.HashSet<>(o.prevLines);
         java.util.Set<String> curSet = new java.util.HashSet<>();
         for (String line : o.lines) curSet.add(line.trim());
-
-        // จุดส่ง — คัดลอกเฉพาะชื่อสถานที่
-        if (!o.place.isEmpty()) {
-            LinearLayout pr = row(this);
-            pr.setGravity(Gravity.CENTER_VERTICAL);
-            pr.setBackground(glass(this, 0x2634D399, 12, 0x5534D399));
-            pr.setPadding(dp(this, 14), dp(this, 10), dp(this, 12), dp(this, 10));
-            pr.addView(text(this, "📍 " + o.place, 16, true, WHITE), lpw(1));
-            TextView cp = chip(this, "📋 คัดลอกชื่อ", false);
-            pr.addView(cp);
-            final String plc = o.place;
-            Fx.onCopyTap(pr, () -> copy(plc, "คัดลอก: " + plc));
-            Fx.onCopyTap(cp, () -> copy(plc, "คัดลอก: " + plc));
-            LinearLayout.LayoutParams prl = lp(MATCH, WRAP); prl.bottomMargin = dp(this, 8);
-            list.addView(pr, prl);
-        }
+        String noteTxt = null;
 
         for (String line : o.lines) {
             String t = line.trim();
             if (t.isEmpty()) continue;
-            if (t.startsWith("ช่องทางชำระ") || t.startsWith("สถานะ")) continue;   // ไปอยู่การ์ดขวาแล้ว
-            final boolean isNote = t.startsWith("หมายเหตุ");
+            if (t.startsWith("ช่องทางชำระ") || t.startsWith("สถานะ")) continue;
+            if (t.startsWith("หมายเหตุ")) { int i = t.indexOf(":"); noteTxt = i > 0 ? t.substring(i + 1).trim() : t; continue; }
             final boolean changed = showDiff && !prevSet.contains(t);
             final String s = t;
             LinearLayout rowv = row(this);
-            rowv.setGravity(Gravity.CENTER_VERTICAL);
-            rowv.setBackground(glass(this,
-                    isNote ? 0x33FFB84D : changed ? 0x40A78BFA : 0x1FFFFFFF, 12,
-                    isNote ? 0x99FFB84D : changed ? 0xCCA78BFA : 0x33FFFFFF));
-            rowv.setPadding(dp(this, 14), dp(this, 12), dp(this, 14), dp(this, 12));
+            rowv.setPadding(dp(this, changed ? 10 : 2), dp(this, 10), dp(this, changed ? 10 : 2), dp(this, 10));
+            if (changed) rowv.setBackground(fill(PURPLE_SOFT, 8));
 
-            // รูปเมนูที่มักทำสลับกัน: ข้าวหน้ากุ้งแกะ / ข้าวหน้ากุ้งผ่า
             int img = t.contains("กุ้งแกะ") ? R.drawable.menu_kae : t.contains("กุ้งผ่า") ? R.drawable.menu_pha : 0;
             if (img != 0) {
                 android.widget.ImageView iv = new android.widget.ImageView(this);
                 iv.setImageResource(img);
                 iv.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
                 iv.setClipToOutline(true);
-                iv.setBackground(glass(this, 0xFFFFFFFF, 10, 0));
-                LinearLayout.LayoutParams il = lp(dp(this, 84), dp(this, 64));
-                il.rightMargin = dp(this, 12);
+                iv.setBackground(fill(WHITE, 8));
+                LinearLayout.LayoutParams il = lp(dp(this, 72), dp(this, 54)); il.rightMargin = dp(this, 12);
                 rowv.addView(iv, il);
             }
-
             if (changed) {
-                TextView tag = text(this, "แก้", 11, true, WHITE);
-                tag.setBackground(glass(this, 0xFF7C3AED, 8, 0));
-                tag.setPadding(dp(this, 7), dp(this, 2), dp(this, 7), dp(this, 2));
-                LinearLayout.LayoutParams tl = lp(WRAP, WRAP); tl.rightMargin = dp(this, 10);
-                rowv.addView(tag, tl);
+                TextView tag = lchip("แก้", PURPLE, WHITE);
+                tag.setTextSize(11); tag.setPadding(dp(this, 8), dp(this, 2), dp(this, 8), dp(this, 2));
+                LinearLayout.LayoutParams tgl = lp(WRAP, WRAP); tgl.rightMargin = dp(this, 10);
+                rowv.addView(tag, tgl);
             }
-
             java.util.regex.Matcher m = pricePat.matcher(t);
-            if (isNote) {
-                int i = t.indexOf(":");
-                rowv.addView(text(this, "📝 " + (i > 0 ? t.substring(i + 1).trim() : t), 16, true, 0xFFFFE6B8), lpw(1));
-            } else if (m.find()) {
-                String nm = m.group(1);
-                boolean shipLine = t.startsWith("ค่าส่ง");
-                rowv.addView(text(this, nm, 17, true, WHITE), lpw(1));
-                TextView pr = text(this, m.group(2) + " บาท", 16, true, OK_GREEN);
+            if (m.find()) {
+                rowv.addView(itemName(m.group(1)), lpw(1));
+                TextView pr = text(this, m.group(2), 16, true, TXT);
                 pr.setPadding(dp(this, 12), 0, 0, 0);
                 rowv.addView(pr);
-                if (shipLine && !o.place.isEmpty()) {
-                    final String plc = o.place;
-                    Fx.onCopyTap(rowv, () -> copy(plc, "คัดลอก: " + plc));
-                    LinearLayout.LayoutParams lp2 = lp(MATCH, WRAP); lp2.bottomMargin = dp(this, 8);
-                    list.addView(rowv, lp2);
-                    continue;
-                }
             } else {
-                rowv.addView(text(this, t, 16, false, WHITE), lpw(1));
+                rowv.addView(itemName(t), lpw(1));
             }
-            LinearLayout.LayoutParams lp2 = lp(MATCH, WRAP);
-            lp2.bottomMargin = dp(this, 8);
             Fx.onCopyTap(rowv, () -> copy(s, "คัดลอก: " + s));
-            list.addView(rowv, lp2);
+            list.addView(rowv, lp(MATCH, WRAP));
+            list.addView(hline(), lp(MATCH, dp(this, 1)));
         }
-        // รายการที่ถูกตัดออกหลังแก้ไข
         if (showDiff) {
             for (String pv : o.prevLines) {
                 String t = pv.trim();
                 if (t.isEmpty() || curSet.contains(t)) continue;
                 if (t.startsWith("ช่องทางชำระ") || t.startsWith("สถานะ")) continue;
                 LinearLayout rowv = row(this);
-                rowv.setBackground(glass(this, 0x22EF4444, 12, 0x66EF4444));
-                rowv.setPadding(dp(this, 14), dp(this, 10), dp(this, 14), dp(this, 10));
-                TextView tag = text(this, "ตัดออก", 11, true, WHITE);
-                tag.setBackground(glass(this, 0xFFEF4444, 8, 0));
-                tag.setPadding(dp(this, 7), dp(this, 2), dp(this, 7), dp(this, 2));
-                LinearLayout.LayoutParams tl = lp(WRAP, WRAP); tl.rightMargin = dp(this, 10);
-                rowv.addView(tag, tl);
-                TextView tv = text(this, t, 15, false, 0xFFFFB4B4);
+                rowv.setBackground(fill(RED_SOFT, 8));
+                rowv.setPadding(dp(this, 10), dp(this, 8), dp(this, 10), dp(this, 8));
+                TextView tag = lchip("ตัดออก", RED_C, WHITE);
+                tag.setTextSize(11); tag.setPadding(dp(this, 8), dp(this, 2), dp(this, 8), dp(this, 2));
+                LinearLayout.LayoutParams tgl = lp(WRAP, WRAP); tgl.rightMargin = dp(this, 10);
+                rowv.addView(tag, tgl);
+                TextView tv = text(this, t, 15, false, RED_C);
                 tv.setPaintFlags(tv.getPaintFlags() | android.graphics.Paint.STRIKE_THRU_TEXT_FLAG);
                 rowv.addView(tv, lpw(1));
-                LinearLayout.LayoutParams lp2 = lp(MATCH, WRAP); lp2.bottomMargin = dp(this, 8);
-                list.addView(rowv, lp2);
+                LinearLayout.LayoutParams rl2 = lp(MATCH, WRAP); rl2.topMargin = dp(this, 6);
+                list.addView(rowv, rl2);
             }
         }
-        TextView hint = text(this, "แตะรายการเพื่อคัดลอกทีละบรรทัด", 11, false, 0xFF8FA0BD);
-        hint.setPadding(dp(this, 4), dp(this, 2), 0, 0);
+        // รวม + ชำระ
+        LinearLayout tot = row(this);
+        tot.setPadding(dp(this, 2), dp(this, 12), dp(this, 2), dp(this, 4));
+        tot.addView(text(this, "รวม", 17, true, TXT), lpw(1));
+        String payTxt = firstPay(o);
+        tot.addView(text(this, (o.total > 0 ? o.total + " บาท" : "—") + (payTxt.isEmpty() ? "" : " · " + payTxt), 17, true,
+                payTxt.contains("ชำระแล้ว") || payTxt.contains("โอน") ? GREEN_C : TXT));
+        list.addView(tot, lp(MATCH, WRAP));
+        if (noteTxt != null && !noteTxt.isEmpty()) {
+            TextView nb = text(this, "📝 หมายเหตุ: " + noteTxt, 14.5f, true, 0xFF92400E);
+            nb.setBackground(glass(this, YEL_SOFT, 12, YEL_LINE));
+            nb.setPadding(dp(this, 12), dp(this, 10), dp(this, 12), dp(this, 10));
+            LinearLayout.LayoutParams nl = lp(MATCH, WRAP); nl.topMargin = dp(this, 8);
+            final String ntx = noteTxt;
+            Fx.onCopyTap(nb, () -> copy(ntx, "คัดลอกหมายเหตุแล้ว"));
+            list.addView(nb, nl);
+        }
+        TextView hint = text(this, "แตะรายการเพื่อคัดลอกทีละบรรทัด", 11, false, MUTED);
+        hint.setPadding(dp(this, 2), dp(this, 8), 0, 0);
         list.addView(hint);
-        sv.addView(list);
 
-        // ---------- สรุป + ปุ่ม (ขวา) ----------
-        LinearLayout side = col(this);
-        LinearLayout info = col(this);
-        info.setBackground(glass(this, 0x14FFFFFF, 16, 0x2EFFFFFF));
-        info.setPadding(dp(this, 16), dp(this, 14), dp(this, 16), dp(this, 14));
-        info.addView(text(this, "ยอดรวม", 12, false, WHITE_DIM));
-        TextView tot = text(this, (o.total > 0 ? o.total : 0) + " บาท", 30, true, OK_GREEN);
-        info.addView(tot);
-        if (!o.pay.isEmpty()) {
-            View div = new View(this);
-            div.setBackgroundColor(0x33FFFFFF);
-            LinearLayout.LayoutParams dl = lp(MATCH, dp(this, 1));
-            dl.topMargin = dp(this, 10); dl.bottomMargin = dp(this, 10);
-            info.addView(div, dl);
-            for (String pl : o.pay.split("\\n")) {
-                String q = pl.trim();
-                if (q.isEmpty() || q.startsWith("หมายเหตุ")) continue;
-                int i = q.indexOf(":");
-                LinearLayout pr = row(this);
-                if (i > 0) {
-                    pr.addView(text(this, q.substring(0, i).trim(), 13, false, WHITE_DIM), lpw(1));
-                    pr.addView(text(this, q.substring(i + 1).trim(), 14, true, 0xFFFFE6B8));
-                } else {
-                    pr.addView(text(this, q, 13, false, 0xFFFFE6B8), lpw(1));
-                }
-                LinearLayout.LayoutParams prl = lp(MATCH, WRAP); prl.topMargin = dp(this, 4);
-                info.addView(pr, prl);
-            }
+        // ---- ปุ่ม ----
+        LinearLayout act = row(this);
+        act.setPadding(0, dp(this, 12), 0, 0);
+        if (!o.place.isEmpty()) {
+            TextView cpP = lbtn("📋 คัดลอกที่อยู่", false);
+            final String plc = o.place;
+            Fx.onCopyTap(cpP, () -> copy(plc, "คัดลอก: " + plc));
+            act.addView(cpP);
         }
-        side.addView(info, lp(MATCH, WRAP));
+        TextView cpA = lbtn("📄 ทั้งออเดอร์", false);
+        LinearLayout.LayoutParams cal = lp(WRAP, WRAP); cal.leftMargin = dp(this, 8);
+        Fx.onCopyTap(cpA, () -> copy(o.text.isEmpty() ? joinLines(o) : o.text, "คัดลอกออเดอร์แล้ว"));
+        act.addView(cpA, cal);
+        View sp = new View(this); act.addView(sp, lpw(1));
 
-        View spacer = new View(this);
-        side.addView(spacer, lpw(1));
-
-        if (!o.status.equals(Order.ST_DOING)) {
-            boolean urgent = unreadIds.contains(o.id);
-            TextView doing = button(this, urgent ? "🔥  กดรับออเดอร์  (เพื่อหยุดเสียง)" : "🔥  รับออเดอร์ / กำลังทำ",
-                    glass(this, urgent ? 0xFFF97316 : 0x59F97316, 14, urgent ? 0xFFFFFFFF : 0x99F97316), urgent ? 17 : 15);
-            if (urgent) { doing.setPadding(dp(this, 14), dp(this, 18), dp(this, 14), dp(this, 18)); startPulse(doing); }
+        boolean urgent = unreadIds.contains(o.id);
+        if (o.needsAck()) {
+            TextView ack = lbtnColor("✓ รับทราบการแก้ไข", PURPLE, WHITE, 0);
+            if (urgent) startPulse(ack);
+            Fx.onTap(ack, () -> {
+                o.ackEditAt = Math.max(o.editedAt, Cloud.now());
+                if (!o.status.equals(Order.ST_NEW)) markRead(o.id);
+                new Thread(() -> { try { Cloud.ackEdit(OrderBubbleService.this, o.id); } catch (Exception ignored) {} }).start();
+                Toast.makeText(this, "รับทราบการแก้ไขแล้ว", Toast.LENGTH_SHORT).show();
+                rebuildChildren();
+                openWorkspace(tab);
+            });
+            LinearLayout.LayoutParams al = lp(WRAP, WRAP); al.leftMargin = dp(this, 8);
+            act.addView(ack, al);
+        }
+        if (o.status.equals(Order.ST_NEW)) {
+            TextView doing = lbtn(urgent ? "🔥 รับออเดอร์ (หยุดเสียง)" : "🔥 รับออเดอร์", true);
+            if (urgent) startPulse(doing);
             Fx.onTap(doing, () -> updateStatus(o, Order.ST_DOING));
-            LinearLayout.LayoutParams dl = lp(MATCH, WRAP); dl.topMargin = dp(this, 10);
-            side.addView(doing, dl);
+            LinearLayout.LayoutParams dl = lp(WRAP, WRAP); dl.leftMargin = dp(this, 8);
+            act.addView(doing, dl);
         }
-        TextView done = button(this, "✓  เสร็จแล้ว", green(this, 14), 16);
-        Fx.onTap(done, () -> updateStatus(o, Order.ST_DONE));
-        LinearLayout.LayoutParams dnl = lp(MATCH, WRAP); dnl.topMargin = dp(this, 8);
-        side.addView(done, dnl);
-        TextView copyAll = button(this, "📋  คัดลอกทั้งออเดอร์", glass(this, GLASS, 14, STROKE), 13.5f);
-        Fx.onCopyTap(copyAll, () -> copy(o.text.isEmpty() ? joinLines(o) : o.text, "คัดลอกออเดอร์แล้ว"));
-        LinearLayout.LayoutParams cal = lp(MATCH, WRAP); cal.topMargin = dp(this, 8);
-        side.addView(copyAll, cal);
-
-        // ---------- ประกอบ ----------
-        int bodyH = Math.min(dp(this, 360), (int) (dm.heightPixels * 0.62f));
-        if (wide) {
-            LinearLayout body = row(this);
-            LinearLayout.LayoutParams ll = lpw(3); ll.rightMargin = dp(this, 16);
-            body.addView(sv, ll);
-            body.addView(side, lpw(2));
-            LinearLayout.LayoutParams bl = lp(MATCH, bodyH); bl.topMargin = dp(this, 14);
-            panel.addView(body, bl);
+        if (!o.status.equals(Order.ST_DONE)) {
+            TextView done = lbtnColor("✅ เสร็จแล้ว", CARD, GREEN_C, GREEN_C);
+            Fx.onTap(done, () -> updateStatus(o, Order.ST_DONE));
+            LinearLayout.LayoutParams dnl = lp(WRAP, WRAP); dnl.leftMargin = dp(this, 8);
+            act.addView(done, dnl);
         } else {
-            LinearLayout.LayoutParams sl = lp(MATCH, Math.min(dp(this, 240), bodyH)); sl.topMargin = dp(this, 12);
-            panel.addView(sv, sl);
-            LinearLayout.LayoutParams sdl = lp(MATCH, WRAP); sdl.topMargin = dp(this, 10);
-            panel.addView(side, sdl);
+            TextView re = lbtnColor("↩ เปิดใหม่ (กำลังทำ)", CARD, ORANGE, ORANGE);
+            Fx.onTap(re, () -> updateStatus(o, Order.ST_DOING));
+            LinearLayout.LayoutParams dnl = lp(WRAP, WRAP); dnl.leftMargin = dp(this, 8);
+            act.addView(re, dnl);
         }
-
-        showPanel();
+        right.addView(act, lp(MATCH, WRAP));
     }
+
+    private TextView itemName(String s) {
+        // "2 x กุ้งเผา" / "กุ้งเผา x2" → เน้นจำนวนสีส้ม
+        TextView t = text(this, s, 16, false, TXT);
+        java.util.regex.Matcher q = java.util.regex.Pattern.compile("^(\\d+\\s*[xX×]\\s*)(.*)$").matcher(s);
+        if (q.find()) {
+            android.text.SpannableString ss = new android.text.SpannableString(s);
+            ss.setSpan(new android.text.style.ForegroundColorSpan(ORANGE), 0, q.group(1).length(), 0);
+            ss.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, q.group(1).length(), 0);
+            t.setText(ss);
+        }
+        return t;
+    }
+
+    private View hline() { View v = new View(this); v.setBackgroundColor(0xFFEEF0F3); return v; }
 
     private String joinLines(Order o) {
         StringBuilder sb = new StringBuilder();
@@ -817,98 +1118,29 @@ public class OrderBubbleService extends Service {
         if (!o.needsAck()) markRead(o.id);   // กดรับออเดอร์ = รับทราบ → เงียบ
         if (Cloud.ready(this)) {
             final String id = o.id;
-            new Thread(() -> {
-                try {
-                    if (status.equals(Order.ST_DONE)) Cloud.setStatus(OrderBubbleService.this, id, status);
-                    else Cloud.setStatus(OrderBubbleService.this, id, status);
-                } catch (Exception ignored) {}
-            }).start();
+            new Thread(() -> { try { Cloud.setStatus(OrderBubbleService.this, id, status); } catch (Exception ignored) {} }).start();
         }
-        Toast.makeText(this, "ออเดอร์ " + (o.no.isEmpty() ? "" : "#" + o.no) + " → " + status,
-                Toast.LENGTH_SHORT).show();
-        closePanel();
+        Toast.makeText(this, "ออเดอร์ " + (o.no.isEmpty() ? o.place : "#" + o.no) + " → " + status, Toast.LENGTH_SHORT).show();
         rebuildChildren();
+        if (panel != null) {
+            if (status.equals(Order.ST_DONE) && listFilter == 0) selId = null;   // ไปเลือกออเดอร์ถัดไปให้
+            openWorkspace(tab);
+        }
     }
 
-    /* ================= รายการออเดอร์ทั้งหมด ================= */
-
-    private void openList() {
-        closePanel();
-        panel = col(this);
-        panel.setBackground(glass(this, 0xF51B1F2E, 22, STROKE));
-        panel.setPadding(dp(this, 16), dp(this, 16), dp(this, 16), dp(this, 16));
-        panel.setElevation(dp(this, 18));
-
-        LinearLayout head = row(this);
-        head.addView(text(this, "🧾 ออเดอร์ทั้งหมด  " + ver(this), 16, true, WHITE), lpw(1));
-        TextView refresh = chip(this, "⟳", false);
-        Fx.onTap(refresh, () -> { fetchOrders(); Toast.makeText(this, "กำลังดึงออเดอร์…", Toast.LENGTH_SHORT).show(); });
-        head.addView(refresh);
-        TextView close = chip(this, "✕", false);
-        LinearLayout.LayoutParams clp = lp(WRAP, WRAP);
-        clp.leftMargin = dp(this, 5);
-        close.setLayoutParams(clp);
-        Fx.onTap(close, this::closePanel);
-        head.addView(close);
-        panel.addView(head, lp(MATCH, WRAP));
-
-        ScrollView sv = new ScrollView(this);
-        LinearLayout list = col(this);
-
-        if (!Cloud.ready(this)) {
-            TextView warn = text(this, "ยังไม่ได้ตั้งค่าคลาวด์ — เปิดแอป POS ออเดอร์ แล้วใส่ลิงก์ฐานข้อมูลก่อน",
-                    13, false, 0xFFFFE6B8);
-            warn.setPadding(0, dp(this, 12), 0, 0);
-            list.addView(warn);
-        } else if (orders.isEmpty()) {
-            TextView em = text(this, "ยังไม่มีออเดอร์เข้ามา", 13.5f, false, WHITE_DIM);
-            em.setPadding(0, dp(this, 14), 0, 0);
-            list.addView(em);
-        }
-
-        List<Order> act = new ArrayList<>(), hist = new ArrayList<>();
-        for (Order o : orders) {
-            if (o.status.equals(Order.ST_DONE)) hist.add(o); else act.add(o);
-        }
-        // กำลังทำ: รอนานสุดอยู่บน  /  ประวัติ: ล่าสุดอยู่บน
-        java.util.Collections.sort(act, (a, b) -> Long.compare(a.createdAt, b.createdAt));
-        java.util.Collections.sort(hist, (a, b) -> Long.compare(Math.max(b.editedAt, b.createdAt), Math.max(a.editedAt, a.createdAt)));
-
-        if (!act.isEmpty()) {
-            TextView h1 = text(this, "กำลังดำเนินการ (" + act.size() + ")", 12.5f, true, 0xFFFFD18F);
-            h1.setPadding(dp(this, 2), 0, 0, dp(this, 7));
-            list.addView(h1);
-            for (Order o : act) addOrderRow(list, o, false);
-        }
-
-        if (!hist.isEmpty()) {
-            TextView h2 = text(this, "ประวัติออเดอร์ที่เสร็จแล้ว (" + hist.size() + ")", 12.5f, true, 0xFF9FE1CB);
-            h2.setPadding(dp(this, 2), dp(this, 10), 0, dp(this, 7));
-            list.addView(h2);
-            for (Order o : hist) addOrderRow(list, o, true);
-        }
-
-        sv.addView(list);
-        LinearLayout.LayoutParams svLp = lp(MATCH, dp(this, 320));
-        svLp.topMargin = dp(this, 12);
-        panel.addView(sv, svLp);
-
-        LinearLayout bottom = row(this);
-        TextView addLocal = button(this, "➕   คีย์ออเดอร์หน้าเครื่อง", green(this, 14), 13.5f);
-        Fx.onTap(addLocal, this::openAddLocal);
-        bottom.addView(addLocal, lpw(1));
-        TextView clearDone = button(this, "🗄   เก็บที่เสร็จแล้วเข้าประวัติ", glass(this, GLASS, 14, STROKE), 13.5f);
-        LinearLayout.LayoutParams cdl = lpw(1); cdl.leftMargin = dp(this, 8);
-        Fx.onTap(clearDone, this::clearDone);
-        bottom.addView(clearDone, cdl);
-        LinearLayout.LayoutParams cdLp = lp(MATCH, WRAP);
-        cdLp.topMargin = dp(this, 10);
-        panel.addView(bottom, cdLp);
-
-        showPanel();
+    /** เปิดดูรายละเอียด (จากฟองย่อย) */
+    private void openDetail(String id) {
+        Order found = null;
+        for (Order o : orders) if (o.id.equals(id)) found = o;
+        if (found == null) return;
+        selId = id;
+        if (found.status.equals(Order.ST_DONE)) { listFilter = 1; openWorkspace(T_HIST); }
+        else { if (listFilter == 1) listFilter = 0; openWorkspace(T_ORDERS); }
     }
 
-    /* ================= คีย์ออเดอร์หน้าเครื่อง (ไม่ต้องรอมือถือ) ================= */
+    private void openList() { if (listFilter == 1) listFilter = 0; openWorkspace(T_ORDERS); }
+
+    /* ---------- แท็บ คีย์ออเดอร์หน้าเครื่อง ---------- */
 
     private static final String K_PLACES = "local_places";
 
@@ -937,98 +1169,123 @@ public class OrderBubbleService extends Service {
         } catch (Exception ignored) {}
     }
 
-    private String addPlace = "";   // ที่อยู่ที่เลือกอยู่ในหน้าคีย์
-
-    /** ขั้น 1: เลือก/ค้นหา/เพิ่มที่อยู่ส่ง */
     private void openAddLocal() { openAddLocal(""); }
+    private void openAddLocal(String query) { addStep = 0; addQuery = query; addPlace = ""; openWorkspace(T_ADD); }
+    private void openAddNote(String place) { addStep = 1; addPlace = place; openWorkspace(T_ADD); }
 
-    private void openAddLocal(String query) {
-        closePanel();
-        addPlace = "";
-        panel = col(this);
-        panel.setBackground(glass(this, 0xF51B1F2E, 22, STROKE));
-        panel.setPadding(dp(this, 20), dp(this, 16), dp(this, 20), dp(this, 18));
-        panel.setElevation(dp(this, 18));
+    private void buildAddTab(LinearLayout main) {
+        if (addStep == 1) { buildAddNote(main); return; }
+        LinearLayout top = topBar(main, "คีย์ออเดอร์หน้าเครื่อง");
+        TextView p1 = lchip("ขั้น 1/2 · เลือกที่อยู่", 0xFFF1F2F5, TXT);
+        LinearLayout.LayoutParams l1 = lp(WRAP, WRAP); l1.leftMargin = dp(this, 14);
+        top.addView(p1, l1);
+        topBarEnd(top);
 
-        LinearLayout head = row(this);
-        head.addView(text(this, "➕ คีย์ออเดอร์หน้าเครื่อง", 18, true, WHITE), lpw(1));
-        TextView close = chip(this, "✕", false);
-        Fx.onTap(close, this::closePanel);
-        head.addView(close);
-        panel.addView(head, lp(MATCH, WRAP));
-        TextView sub = text(this, "ขั้น 1/2 — เลือกที่อยู่ส่ง (พิมพ์ค้นหา หรือพิมพ์ที่อยู่ใหม่แล้วกด \"ใช้ที่อยู่นี้\")", 12.5f, false, WHITE_DIM);
-        sub.setPadding(0, dp(this, 4), 0, 0);
-        panel.addView(sub);
-
-        final android.widget.EditText search = input(this, "🔍 ค้นหา / พิมพ์ที่อยู่ใหม่");
-        search.setTextSize(17);
-        search.setText(query);
-        search.setSelection(query.length());
-        LinearLayout.LayoutParams sl = lp(MATCH, WRAP); sl.topMargin = dp(this, 12);
-        panel.addView(search, sl);
+        LinearLayout body = bodyOf(main);
+        final android.widget.EditText search = linput("🔍  ค้นหา / พิมพ์ที่อยู่ใหม่");
+        search.setText(addQuery);
+        search.setSelection(addQuery.length());
+        body.addView(search, lp(MATCH, WRAP));
 
         final LinearLayout listBox = col(this);
-        final ScrollView sv = new ScrollView(this);
+        ScrollView sv = new ScrollView(this);
+        sv.setVerticalScrollBarEnabled(false);
         sv.addView(listBox);
+        LinearLayout.LayoutParams svl = new LinearLayout.LayoutParams(MATCH, 0, 1); svl.topMargin = dp(this, 12);
+        body.addView(sv, svl);
+
         DisplayMetrics dm = getResources().getDisplayMetrics();
-        LinearLayout.LayoutParams svl = lp(MATCH, (int) (dm.heightPixels * 0.55f));
-        svl.topMargin = dp(this, 10);
-        panel.addView(sv, svl);
-        // จำนวนคอลัมน์ตามความกว้างจอ: การ์ดละ ~170dp (แท็บเล็ตแนวนอนได้ 5-6 ใบต่อแถว)
-        final int cols = Math.max(2, Math.min(6, (dm.widthPixels - dp(this, 40)) / dp(this, 170)));
+        int paneW = Math.min(dm.widthPixels - dp(this, 12), dp(this, 1180)) - dp(this, 84 + 36);
+        final int cols = Math.max(2, Math.min(6, paneW / dp(this, 190)));
+
+        // สถิติการใช้ที่อยู่จากออเดอร์บนคลาวด์
+        final java.util.Map<String, Integer> cnt = new java.util.HashMap<>();
+        final java.util.Map<String, Long> last = new java.util.HashMap<>();
+        for (Order o : orders) {
+            String p = o.place.trim(); if (p.isEmpty()) continue;
+            cnt.put(p, (cnt.containsKey(p) ? cnt.get(p) : 0) + 1);
+            if (!last.containsKey(p) || last.get(p) < o.createdAt) last.put(p, o.createdAt);
+        }
 
         final Runnable refresh = () -> {
             listBox.removeAllViews();
             String q = search.getText().toString().trim();
+            addQuery = q;
             String ql = q.toLowerCase();
             List<String> all = knownPlaces();
-            // ปุ่มด่วน
+
             LinearLayout quick = row(this);
             for (String qk : new String[]{"หน้าร้าน", "รับเอง", "ไรเดอร์"}) {
-                TextView c = chip(this, qk, false);
-                LinearLayout.LayoutParams cl = lp(WRAP, WRAP); cl.rightMargin = dp(this, 6);
+                TextView c = lbtnColor(qk, CARD, qk.equals("หน้าร้าน") ? ORANGE : TXT, qk.equals("หน้าร้าน") ? ORANGE : 0xFFDFE2E8);
+                c.setTextSize(14);
+                LinearLayout.LayoutParams cl = lp(WRAP, WRAP); cl.rightMargin = dp(this, 8);
                 final String v = qk;
                 Fx.onTap(c, () -> openAddNote(v));
                 quick.addView(c, cl);
             }
-            LinearLayout.LayoutParams qll = lp(MATCH, WRAP); qll.bottomMargin = dp(this, 8);
+            LinearLayout.LayoutParams qll = lp(MATCH, WRAP); qll.bottomMargin = dp(this, 12);
             listBox.addView(quick, qll);
 
-            if (!q.isEmpty() && !all.contains(q)) {
-                TextView add = button(this, "➕  ใช้ที่อยู่นี้: " + q, green(this, 12), 14);
-                Fx.onTap(add, () -> openAddNote(q));
-                LinearLayout.LayoutParams al = lp(MATCH, WRAP); al.bottomMargin = dp(this, 8);
-                listBox.addView(add, al);
-            }
-            int shown = 0;
+            List<String> items = new ArrayList<>();
+            for (String p : all) if (ql.isEmpty() || p.toLowerCase().contains(ql)) items.add(p);
+            boolean addNew = !q.isEmpty() && !all.contains(q);
+
+            int total = items.size() + (addNew ? 1 : 0) + (q.isEmpty() ? 1 : 0);
             LinearLayout gridRow = null;
-            for (String p : all) {
-                if (!ql.isEmpty() && !p.toLowerCase().contains(ql)) continue;
-                if (shown % cols == 0) {
+            int k = 0;
+            for (int i = 0; i < total; i++) {
+                if (k % cols == 0) {
                     gridRow = row(this);
-                    LinearLayout.LayoutParams rl = lp(MATCH, WRAP); rl.bottomMargin = dp(this, 8);
+                    gridRow.setGravity(Gravity.TOP);
+                    LinearLayout.LayoutParams rl = lp(MATCH, WRAP); rl.bottomMargin = dp(this, 12);
                     listBox.addView(gridRow, rl);
                 }
-                TextView t = text(this, "📍 " + p, 15, true, WHITE);
-                t.setBackground(glass(this, 0x1FFFFFFF, 14, 0x33FFFFFF));
-                t.setPadding(dp(this, 12), dp(this, 16), dp(this, 12), dp(this, 16));
-                t.setGravity(android.view.Gravity.CENTER);
-                t.setMaxLines(2);
-                t.setEllipsize(android.text.TextUtils.TruncateAt.END);
-                t.setMinHeight(dp(this, 64));
-                final String v = p;
-                Fx.onTap(t, () -> openAddNote(v));
-                LinearLayout.LayoutParams tl = lpw(1);
-                if (shown % cols != 0) tl.leftMargin = dp(this, 8);
-                gridRow.addView(t, tl);
-                shown++;
+                LinearLayout cardV = col(this);
+                cardV.setGravity(Gravity.CENTER_VERTICAL);
+                cardV.setPadding(dp(this, 14), dp(this, 12), dp(this, 14), dp(this, 12));
+                cardV.setMinimumHeight(dp(this, 92));
+                if (addNew && i == 0) {
+                    cardV.setBackground(glass(this, 0xFFFFF8F4, 14, ORANGE));
+                    cardV.setGravity(Gravity.CENTER);
+                    TextView n = text(this, "＋ ใช้ที่อยู่นี้", 16, true, ORANGE); n.setGravity(Gravity.CENTER);
+                    cardV.addView(n);
+                    TextView s2 = text(this, q, 12.5f, false, ORANGE); s2.setGravity(Gravity.CENTER); s2.setMaxLines(2);
+                    s2.setPadding(0, dp(this, 4), 0, 0);
+                    cardV.addView(s2);
+                    final String v = q;
+                    Fx.onTap(cardV, () -> openAddNote(v));
+                } else if (i >= items.size() + (addNew ? 1 : 0)) {
+                    cardV.setBackground(glass(this, 0xFFFFF8F4, 14, 0xFFF5B79B));
+                    cardV.setGravity(Gravity.CENTER);
+                    TextView n = text(this, "＋ เพิ่มที่อยู่ใหม่", 16, true, ORANGE); n.setGravity(Gravity.CENTER);
+                    cardV.addView(n);
+                    TextView s2 = text(this, "พิมพ์ในช่องค้นหา", 12, false, MUTED); s2.setGravity(Gravity.CENTER);
+                    s2.setPadding(0, dp(this, 4), 0, 0);
+                    cardV.addView(s2);
+                    Fx.onTap(cardV, () -> { search.requestFocus(); showIme(search); });
+                } else {
+                    final String p = items.get(i - (addNew ? 1 : 0));
+                    cardV.setBackground(card(14));
+                    TextView n = text(this, p, 17, true, TXT);
+                    n.setMaxLines(2); n.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                    cardV.addView(n);
+                    int c2 = cnt.containsKey(p) ? cnt.get(p) : 0;
+                    String when = last.containsKey(p) ? "ใช้ล่าสุด " + relDay(last.get(p)) : "บันทึกไว้ในเครื่อง";
+                    TextView s2 = text(this, when + (c2 > 0 ? " · " + c2 + " ครั้ง" : ""), 12, false, MUTED);
+                    s2.setPadding(0, dp(this, 4), 0, 0);
+                    cardV.addView(s2);
+                    Fx.onTap(cardV, () -> openAddNote(p));
+                }
+                LinearLayout.LayoutParams cl = lpw(1);
+                if (k % cols != 0) cl.leftMargin = dp(this, 12);
+                gridRow.addView(cardV, cl);
+                k++;
             }
-            // เติมช่องว่างให้แถวสุดท้ายการ์ดเท่ากัน
-            if (gridRow != null) for (int k = shown % cols; k != 0 && k < cols; k++) {
-                View sp = new View(this); LinearLayout.LayoutParams sl2 = lpw(1); sl2.leftMargin = dp(this, 8); gridRow.addView(sp, sl2);
+            if (gridRow != null) for (int e = k % cols; e != 0 && e < cols; e++) {
+                View sp = new View(this); LinearLayout.LayoutParams sl2 = lpw(1); sl2.leftMargin = dp(this, 12); gridRow.addView(sp, sl2);
             }
-            if (shown == 0 && q.isEmpty()) {
-                TextView em = text(this, "ยังไม่มีที่อยู่ที่เคยใช้ — พิมพ์ที่อยู่ด้านบนได้เลย", 12.5f, false, WHITE_DIM);
+            if (items.isEmpty() && !ql.isEmpty() && !addNew) {
+                TextView em = text(this, "ไม่พบที่อยู่ที่ตรงกับ \"" + q + "\"", 13, false, MUTED);
                 em.setPadding(dp(this, 4), dp(this, 6), 0, 0);
                 listBox.addView(em);
             }
@@ -1040,44 +1297,74 @@ public class OrderBubbleService extends Service {
         });
         refresh.run();
 
-        showPanel();
+        LinearLayout f = footerOf(main);
+        TextView cancel = lbtn("✕ ยกเลิก", false);
+        Fx.onTap(cancel, this::closePanel);
+        f.addView(cancel);
+        View sp = new View(this); f.addView(sp, lpw(1));
+        TextView tip = text(this, "แตะการ์ดที่อยู่ → ใส่โน้ต → ยืนยัน ระบบจับเวลาให้ทันที", 12.5f, false, MUTED);
+        f.addView(tip);
+    }
+
+    private String relDay(long t) {
+        long d = (Cloud.now() - t) / 86400000L;
+        if (d <= 0) return "วันนี้ " + clockOf(t);
+        if (d == 1) return "เมื่อวาน";
+        if (d < 7) return d + " วันก่อน";
+        if (d < 30) return (d / 7) + " สัปดาห์ก่อน";
+        return (d / 30) + " เดือนก่อน";
+    }
+
+    private void showIme(View v) {
         ui.postDelayed(() -> {
-            search.requestFocus();
+            v.requestFocus();
             android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
-            if (imm != null) imm.showSoftInput(search, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
+            if (imm != null) imm.showSoftInput(v, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
         }, 200);
     }
 
     /** ขั้น 2: โน้ตเล็กน้อย → ยืนยัน → เริ่มจับเวลา */
-    private void openAddNote(final String place) {
-        closePanel();
-        addPlace = place;
-        panel = col(this);
-        panel.setBackground(glass(this, 0xF51B1F2E, 22, STROKE));
-        panel.setPadding(dp(this, 20), dp(this, 16), dp(this, 20), dp(this, 18));
-        panel.setElevation(dp(this, 18));
+    private void buildAddNote(LinearLayout main) {
+        final String place = addPlace;
+        LinearLayout top = topBar(main, "คีย์ออเดอร์หน้าเครื่อง");
+        TextView p1 = lchip("ขั้น 2/2 · โน้ต + ยืนยัน", 0xFFF1F2F5, TXT);
+        LinearLayout.LayoutParams l1 = lp(WRAP, WRAP); l1.leftMargin = dp(this, 14);
+        top.addView(p1, l1);
+        topBarEnd(top);
 
-        LinearLayout head = row(this);
-        TextView back = chip(this, "‹ กลับ", false);
+        LinearLayout body = bodyOf(main);
+        LinearLayout cardV = col(this);
+        cardV.setBackground(card(16));
+        cardV.setPadding(dp(this, 22), dp(this, 20), dp(this, 22), dp(this, 20));
+        cardV.addView(text(this, "ที่อยู่ส่ง", 12.5f, false, MUTED));
+        TextView pl = text(this, "📍 " + place, 24, true, TXT);
+        pl.setPadding(0, dp(this, 4), 0, dp(this, 16));
+        cardV.addView(pl);
+        cardV.addView(text(this, "โน้ตเล็กน้อย (ไม่ใส่ก็ได้)", 12.5f, false, MUTED));
+        final android.widget.EditText note = linput("📝 เช่น กุ้งเผา 1 โล / ไม่ใส่ผัก / โทรก่อนถึง");
+        note.setTextSize(18);
+        LinearLayout.LayoutParams nl = lp(MATCH, WRAP); nl.topMargin = dp(this, 6);
+        cardV.addView(note, nl);
+        // โน้ตด่วน
+        LinearLayout quick = row(this);
+        for (String qk : new String[]{"ไม่เผ็ด", "เผ็ดมาก", "ไม่ใส่ผัก", "โทรก่อนถึง", "รีบ"}) {
+            TextView c = lchip(qk, 0xFFF1F2F5, TXT);
+            LinearLayout.LayoutParams cl = lp(WRAP, WRAP); cl.rightMargin = dp(this, 8);
+            final String v = qk;
+            Fx.onTap(c, () -> { String cur = note.getText().toString().trim(); note.setText(cur.isEmpty() ? v : cur + " / " + v); note.setSelection(note.getText().length()); });
+            quick.addView(c, cl);
+        }
+        LinearLayout.LayoutParams ql = lp(MATCH, WRAP); ql.topMargin = dp(this, 10);
+        cardV.addView(quick, ql);
+        body.addView(cardV, lp(MATCH, WRAP));
+
+        LinearLayout f = footerOf(main);
+        TextView back = lbtn("‹ กลับ", false);
         Fx.onTap(back, () -> openAddLocal(""));
-        head.addView(back);
-        TextView title = text(this, "📍 " + place, 18, true, WHITE);
-        title.setPadding(dp(this, 10), 0, 0, 0);
-        head.addView(title, lpw(1));
-        TextView close = chip(this, "✕", false);
-        Fx.onTap(close, this::closePanel);
-        head.addView(close);
-        panel.addView(head, lp(MATCH, WRAP));
-        TextView sub = text(this, "ขั้น 2/2 — โน้ตเล็กน้อย (ไม่ใส่ก็ได้) แล้วกดยืนยัน", 12.5f, false, WHITE_DIM);
-        sub.setPadding(0, dp(this, 4), 0, 0);
-        panel.addView(sub);
-
-        final android.widget.EditText note = input(this, "📝 เช่น กุ้งเผา 1 โล / ไม่ใส่ผัก / โทรก่อนถึง");
-        note.setTextSize(16);
-        LinearLayout.LayoutParams nl = lp(MATCH, WRAP); nl.topMargin = dp(this, 12);
-        panel.addView(note, nl);
-
-        TextView go = button(this, "✓  ยืนยัน — เริ่มจับเวลา", green(this, 16), 18);
+        f.addView(back);
+        View sp = new View(this); f.addView(sp, lpw(1));
+        TextView go = lbtn("✓  ยืนยัน — เริ่มจับเวลา", true);
+        go.setTextSize(17);
         Fx.onTap(go, () -> {
             final String n = note.getText().toString().trim();
             final Order o = new Order();
@@ -1089,55 +1376,114 @@ public class OrderBubbleService extends Service {
             o.status = Order.ST_DOING;          // คีย์เองแปลว่ารับแล้ว เริ่มทำเลย
             o.by = "pos";
             rememberPlace(place);
-            closePanel();
             Toast.makeText(this, "⏱ เริ่มจับเวลา " + place, Toast.LENGTH_SHORT).show();
+            listFilter = 0;
+            openWorkspace(T_ORDERS);
             new Thread(() -> {
                 String id = "";
                 try { id = Cloud.push(OrderBubbleService.this, o); } catch (Exception ignored) {}
                 final String fid = id;
                 ui.post(() -> {
-                    if (!fid.isEmpty()) { seenIds.add(fid); seenEdit.put(fid, 0L); }   // ไม่ต้องเตือนตัวเอง
+                    if (!fid.isEmpty()) { seenIds.add(fid); seenEdit.put(fid, 0L); selId = fid; }
                     fetchOrders();
+                    ui.postDelayed(() -> { if (panel != null && tab == T_ORDERS) openWorkspace(T_ORDERS); }, 1200);
                 });
             }).start();
         });
-        LinearLayout.LayoutParams gl = lp(MATCH, WRAP); gl.topMargin = dp(this, 14);
-        panel.addView(go, gl);
-
-        showPanel();
-        ui.postDelayed(() -> {
-            note.requestFocus();
-            android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
-            if (imm != null) imm.showSoftInput(note, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
-        }, 200);
+        f.addView(go);
+        showIme(note);
     }
 
-    /** 1 แถวในรายการออเดอร์ */
-    private void addOrderRow(LinearLayout list, Order o, boolean done) {
-        LinearLayout rowv = row(this);
-        rowv.setBackground(glass(this, done ? 0x12FFFFFF : 0x1FFFFFFF, 12, done ? 0x22FFFFFF : 0x33FFFFFF));
-        rowv.setPadding(dp(this, 12), dp(this, 11), dp(this, 12), dp(this, 11));
+    /* ---------- แท็บ เก็บกุ้ง ---------- */
 
-        TextView dot = text(this, "●", 15, true, done ? 0xFF22C55E : o.tierColor());
-        dot.setPadding(0, 0, dp(this, 9), 0);
-        rowv.addView(dot);
+    private void buildHarvestTab(LinearLayout main) {
+        LinearLayout top = topBar(main, "เก็บกุ้งจากบ่อ");
+        topBarEnd(top);
+        LinearLayout body = bodyOf(main);
+        boolean pending = Cloud.harvestAt > 0 && Cloud.harvestAck < Cloud.harvestAt;
+        LinearLayout cardV = col(this);
+        cardV.setBackground(pending ? glass(this, ORANGE_SOFT, 16, ORANGE) : card(16));
+        cardV.setPadding(dp(this, 24), dp(this, 22), dp(this, 24), dp(this, 22));
+        cardV.setGravity(Gravity.CENTER_HORIZONTAL);
+        TextView big = text(this, pending ? "🦐 มีสัญญาณให้ไปเก็บกุ้ง!" : "🦐 ไม่มีสัญญาณค้าง", 26, true, pending ? ORANGE : TXT);
+        big.setGravity(Gravity.CENTER);
+        cardV.addView(big);
+        String info;
+        if (Cloud.harvestAt > 0) info = "แจ้งล่าสุดจากมือถือ " + clockOf(Cloud.harvestAt) + " น." + (Cloud.harvestAck >= Cloud.harvestAt ? " · รับทราบแล้ว " + clockOf(Cloud.harvestAck) + " น." : "");
+        else info = "ยังไม่เคยมีสัญญาณจากมือถือ";
+        if (Cloud.harvestEvery > 0) info += "\nตั้งอัตโนมัติทุก " + Cloud.harvestEvery + " นาที";
+        TextView sub = text(this, info, 14, false, MUTED);
+        sub.setGravity(Gravity.CENTER);
+        sub.setPadding(0, dp(this, 8), 0, 0);
+        cardV.addView(sub);
+        if (pending) {
+            TextView ok = lbtn("✓  รับทราบ ไปเก็บกุ้งแล้ว", true);
+            ok.setTextSize(18);
+            Fx.onTap(ok, () -> {
+                Cloud.harvestAck = Math.max(Cloud.harvestAt, Cloud.now());
+                harvestPanel = false;
+                if (unreadIds.isEmpty()) Alert.stop();
+                new Thread(() -> { try { Cloud.ackHarvest(OrderBubbleService.this); } catch (Exception ignored) {} }).start();
+                Toast.makeText(this, "รับทราบแล้ว 🦐", Toast.LENGTH_SHORT).show();
+                openWorkspace(T_HARV);
+            });
+            LinearLayout.LayoutParams okl = lp(MATCH, WRAP); okl.topMargin = dp(this, 18);
+            cardV.addView(ok, okl);
+        }
+        body.addView(cardV, lp(MATCH, WRAP));
+        TextView tip = text(this, "เมื่อมือถือกด 🦐 แจ้งเก็บกุ้ง เครื่องนี้จะมีเสียงไซเรน + หน้าต่างเด้งขึ้นจนกว่าจะกดรับทราบ", 12.5f, false, MUTED);
+        tip.setPadding(dp(this, 4), dp(this, 12), 0, 0);
+        body.addView(tip);
+    }
 
-        LinearLayout info = col(this);
-        info.addView(text(this, (o.no.isEmpty() ? "ออเดอร์" : "ออเดอร์ที่ " + o.no)
-                + (o.place.isEmpty() ? "" : "  •  " + o.place), 13.5f, true, done ? WHITE_DIM : WHITE));
-        TextView meta = text(this, (done ? "ใช้เวลา " : "รอมา ") + o.waitedMin() + " นาที  •  " + o.status
-                + (o.total > 0 ? "  •  " + o.total + " บาท" : "")
-                + (o.needsAck() ? "  •  ✏️ แก้ไข — รอรับทราบ" : ""), 11.5f, false, o.needsAck() ? 0xFFE9D5FF : WHITE_DIM);
-        meta.setPadding(0, dp(this, 3), 0, 0);
-        info.addView(meta);
-        rowv.addView(info, lpw(1));
+    /* ---------- แท็บ ตั้งค่า ---------- */
 
-        final String oid = o.id;
-        Fx.onTap(rowv, () -> openDetail(oid));
+    private void buildSettingsTab(LinearLayout main) {
+        LinearLayout top = topBar(main, "ตั้งค่า");
+        topBarEnd(top);
+        LinearLayout body = bodyOf(main);
+        LinearLayout cardV = col(this);
+        cardV.setBackground(card(16));
+        cardV.setPadding(dp(this, 22), dp(this, 16), dp(this, 22), dp(this, 16));
+        int done = 0; for (Order o : orders) if (o.status.equals(Order.ST_DONE)) done++;
+        long age = Cloud.lastOk == 0 ? -1 : (System.currentTimeMillis() - Cloud.lastOk) / 1000;
+        String[][] rows = {
+                {"เวอร์ชันแอป", ver(this)},
+                {"ร้าน", Cloud.shop(this)},
+                {"ต่อคลาวด์ล่าสุด", age < 0 ? "ยังไม่เคย" : age + " วินาทีที่แล้ว"},
+                {"ออเดอร์บนคลาวด์", orders.size() + " รายการ (เสร็จแล้ว " + done + ")"},
+                {"ดึงออเดอร์ใหม่", "ทุก 6 วินาที · เตือนครบ " + READY_MIN + " นาที 2 รอบ"},
+                {"เก็บเข้าคลังอัตโนมัติ", "เสร็จแล้วเกิน 12 ชม. · ลบคลังเกิน 30 วัน"},
+        };
+        for (String[] r : rows) {
+            LinearLayout rv = row(this);
+            rv.setPadding(0, dp(this, 10), 0, dp(this, 10));
+            rv.addView(text(this, r[0], 14, false, MUTED), lpw(1));
+            rv.addView(text(this, r[1], 14, true, TXT));
+            cardV.addView(rv, lp(MATCH, WRAP));
+            cardV.addView(hline(), lp(MATCH, dp(this, 1)));
+        }
+        body.addView(cardV, lp(MATCH, WRAP));
 
-        LinearLayout.LayoutParams rl = lp(MATCH, WRAP);
-        rl.bottomMargin = dp(this, 8);
-        list.addView(rowv, rl);
+        LinearLayout acts = row(this);
+        acts.setPadding(0, dp(this, 14), 0, 0);
+        TextView arch = lbtn("🗄  เก็บที่เสร็จแล้วเข้าคลัง (" + done + ")", false);
+        Fx.onTap(arch, this::clearDone);
+        acts.addView(arch);
+        TextView app = lbtn("🔗 เปิดหน้าตั้งค่าลิงก์คลาวด์", false);
+        LinearLayout.LayoutParams al = lp(WRAP, WRAP); al.leftMargin = dp(this, 8);
+        Fx.onTap(app, () -> {
+            closePanel();
+            Intent i = new Intent(this, MainActivity.class);
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(i);
+        });
+        acts.addView(app, al);
+        TextView test = lbtn("🔔 ทดสอบเสียงออเดอร์ใหม่", false);
+        LinearLayout.LayoutParams tl = lp(WRAP, WRAP); tl.leftMargin = dp(this, 8);
+        Fx.onTap(test, () -> Alert.ping(this, Alert.NEW));
+        acts.addView(test, tl);
+        body.addView(acts, lp(MATCH, WRAP));
     }
 
     private void clearDone() {
@@ -1146,9 +1492,9 @@ public class OrderBubbleService extends Service {
         if (done.isEmpty()) { Toast.makeText(this, "ไม่มีออเดอร์ที่เสร็จแล้ว", Toast.LENGTH_SHORT).show(); return; }
         new Thread(() -> {
             for (Order o : done) { try { Cloud.archive(OrderBubbleService.this, o); } catch (Exception ignored) {} }
-            ui.post(() -> { fetchOrders(); closePanel(); });
+            ui.post(() -> { fetchOrders(); ui.postDelayed(() -> { if (panel != null) openWorkspace(tab); }, 900); });
         }).start();
-        Toast.makeText(this, "เก็บเข้าประวัติ " + done.size() + " ออเดอร์แล้ว (เก็บไว้ 30 วัน)", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "เก็บเข้าคลัง " + done.size() + " ออเดอร์แล้ว (เก็บไว้ 30 วัน)", Toast.LENGTH_SHORT).show();
     }
 
     /** งานดูแลอัตโนมัติ (ทุก 30 นาที): เก็บออเดอร์เสร็จเกิน 12 ชม. เข้า archive + ลบ archive เกิน 30 วัน */
@@ -1173,9 +1519,16 @@ public class OrderBubbleService extends Service {
     private void showPanel() {
         DisplayMetrics dm = getResources().getDisplayMetrics();
         int w = Math.min(dm.widthPixels, dp(this, 1000));   // จอกว้างมาก → จำกัดความกว้างให้อ่านง่าย
-        panelParams = new WindowManager.LayoutParams(w, WRAP, wtype(),
+        showPanel(w, WRAP, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+    }
+
+    private void showPanel(int w, int h) { showPanel(w, h, Gravity.CENTER); }
+
+    private void showPanel(int w, int h, int gravity) {
+        panelParams = new WindowManager.LayoutParams(w, h, wtype(),
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL, PixelFormat.TRANSLUCENT);
-        panelParams.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
+        panelParams.gravity = gravity;
+        panelParams.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN;
 
         panel.setFocusableInTouchMode(true);
         panel.setOnKeyListener((v, code, ev) -> {
