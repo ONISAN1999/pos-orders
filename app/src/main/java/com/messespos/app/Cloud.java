@@ -32,6 +32,8 @@ public class Cloud {
 
     /** เวลาปัจจุบันตามเซิร์ฟเวอร์ */
     public static long now() { return System.currentTimeMillis() + offset; }
+    /** เวลาที่ต่อคลาวด์สำเร็จล่าสุด (มิลลิวินาทีเครื่อง) */
+    public static long lastOk = 0;
     public static boolean synced() { return offsetKnown; }
 
     public static SharedPreferences prefs(Context c) {
@@ -45,12 +47,18 @@ public class Cloud {
         String u = prefs(c).getString(K_URL, "").trim();
         return u.isEmpty() ? DEFAULT_URL : u;
     }
-    public static String shop(Context c)  { return prefs(c).getString(K_SHOP, "bangfan").trim(); }
+    /** รหัสร้านลับ (ฝังมากับแอป) — กฎ Firebase อนุญาตเฉพาะ path นี้ */
+    public static final String SHOP = "bf-ehiK6Xb7nOheBEIyQb71NBJn";
+
+    public static String shop(Context c) {
+        String s = prefs(c).getString(K_SHOP, "").trim();
+        return (s.isEmpty() || s.equals("bangfan")) ? SHOP : s;
+    }
 
     public static void save(Context c, String url, String shopCode) {
         prefs(c).edit()
                 .putString(K_URL, url == null ? "" : url.trim())
-                .putString(K_SHOP, shopCode == null || shopCode.trim().isEmpty() ? "bangfan" : shopCode.trim())
+                .putString(K_SHOP, shopCode == null || shopCode.trim().isEmpty() ? SHOP : shopCode.trim())
                 .apply();
     }
 
@@ -173,7 +181,50 @@ public class Cloud {
         }
         con.disconnect();
         if (code < 200 || code >= 300) throw new Exception("HTTP " + code + " " + out);
+        lastOk = System.currentTimeMillis();
         return out;
+    }
+
+    /* ---------------- Archive (แทนการลบ) ---------------- */
+
+    private static String archiveBase(Context c) {
+        String u = dbUrl(c);
+        while (u.endsWith("/")) u = u.substring(0, u.length() - 1);
+        return u + "/shops/" + shop(c) + "/archive";
+    }
+
+    /** ย้ายออเดอร์ไป archive แล้วลบออกจากรายการ */
+    public static void archive(Context c, Order o) throws Exception {
+        JSONObject j = o.toJson();
+        j.put("archivedAt", new JSONObject().put(".sv", "timestamp"));
+        j.put("editedAt", o.editedAt); j.put("ackEditAt", o.ackEditAt);
+        http(archiveBase(c) + "/" + o.id + ".json", "PUT", j.toString());
+        http(base(c) + "/" + o.id + ".json", "DELETE", null);
+    }
+
+    /** ถอดเวลาออกจาก push-id ของ Firebase (8 ตัวแรก = timestamp base64 แบบ Firebase) */
+    private static final String PUSH_CHARS = "-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz";
+    public static long pushIdTime(String id) {
+        if (id == null || id.length() < 8) return 0;
+        long t = 0;
+        for (int i = 0; i < 8; i++) { int v = PUSH_CHARS.indexOf(id.charAt(i)); if (v < 0) return 0; t = t * 64 + v; }
+        return t;
+    }
+
+    /** ลบ archive ที่เก่ากว่า N วัน — คืนจำนวนที่ลบ */
+    public static int purgeArchive(Context c, int days) throws Exception {
+        String body = http(archiveBase(c) + ".json?shallow=true", "GET", null);
+        if (body == null || body.equals("null") || body.trim().isEmpty()) return 0;
+        JSONObject keys = new JSONObject(body);
+        long cutoff = now() - days * 86400000L;
+        int n = 0;
+        Iterator<String> it = keys.keys();
+        while (it.hasNext()) {
+            String k = it.next();
+            long t = pushIdTime(k);
+            if (t > 0 && t < cutoff) { http(archiveBase(c) + "/" + k + ".json", "DELETE", null); n++; }
+        }
+        return n;
     }
 
     /* ---------------- โหมดออฟไลน์ (เก็บในเครื่อง) ---------------- */

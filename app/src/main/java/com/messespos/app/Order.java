@@ -21,6 +21,7 @@ public class Order {
     public int total = 0;
     public String pay = "";         // ช่องทาง/สถานะชำระ
     public String status = ST_NEW;
+    public String by = "";          // "mobile" / "pos"
     public long createdAt = System.currentTimeMillis();
     public long editedAt = 0, ackEditAt = 0;   // แก้ไขจากมือถือ / POS กดรับทราบแล้ว
     public List<String> prevLines = new ArrayList<>();   // รายการก่อนแก้ (ไว้ไฮไลต์ส่วนที่เปลี่ยน)
@@ -69,6 +70,7 @@ public class Order {
         r.total = o.optInt("total", 0);
         r.pay = o.optString("pay", "");
         r.status = o.optString("status", ST_NEW);
+        r.by = o.optString("by", "");
         r.createdAt = o.optLong("createdAt", Cloud.now());
         r.editedAt = o.optLong("editedAt", 0);
         r.ackEditAt = o.optLong("ackEditAt", 0);
@@ -90,6 +92,7 @@ public class Order {
             o.put("total", total);
             o.put("pay", pay);
             o.put("status", status);
+            if (!by.isEmpty()) o.put("by", by);
             o.put("createdAt", createdAt);
             JSONArray a = new JSONArray();
             for (String s : lines) a.put(s);
