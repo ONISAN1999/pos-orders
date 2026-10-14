@@ -1019,148 +1019,90 @@ public class OrderBubbleService extends Service {
         return "";
     }
 
-    /** รายละเอียดออเดอร์ (ด้านขวา) */
+    /** รายละเอียดออเดอร์ (ด้านขวา) — แบบ "ใบสั่งครัว": หัวดำ · จำนวนกล่องส้ม · เส้นประ · รวม/ชำระ 2 กล่องใหญ่ */
     private void buildDetail(LinearLayout right, final Order o, int paneH) {
-        // ---- หัว ----
-        LinearLayout h = row(this);
-        TextView big = text(this, o.place.isEmpty() ? "ออเดอร์" : o.place, 22, true, TXT);
-        big.setSingleLine(true); big.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        h.addView(big, new LinearLayout.LayoutParams(0, WRAP, 1));
-        if (!o.no.isEmpty()) {
-            TextView no = lchip("#" + o.no, 0xFFF1F2F5, TXT);
-            LinearLayout.LayoutParams nl = lp(WRAP, WRAP); nl.leftMargin = dp(this, 10);
-            h.addView(no, nl);
-        }
-        TextView st = statusTag(o);
-        LinearLayout.LayoutParams stl = lp(WRAP, WRAP); stl.leftMargin = dp(this, 8);
-        h.addView(st, stl);
-        if (o.needsAck()) {
-            TextView ed = lchip("✏️ แก้ไขจากมือถือ " + clockOf(o.editedAt), PURPLE_SOFT, PURPLE);
-            LinearLayout.LayoutParams el = lp(WRAP, WRAP); el.leftMargin = dp(this, 8);
-            h.addView(ed, el);
-        }
-        LinearLayout.LayoutParams tl = lp(dp(this, 64), dp(this, 64)); tl.leftMargin = dp(this, 14);
-        h.addView(timeBox(o, 64), tl);
-        right.addView(h, lp(MATCH, WRAP));
-        TextView sub = text(this, "สั่งเมื่อ " + clockOf(o.createdAt) + " น." + (o.status.equals(Order.ST_DONE) ? "" : " · รอมาแล้ว " + o.waitedMin() + " นาที")
-                + (o.by.equals("pos") ? " · คีย์ที่เครื่อง" : " · จากมือถือ"), 12.5f, false, MUTED);
-        sub.setPadding(0, dp(this, 4), 0, dp(this, 8));
-        right.addView(sub);
+        right.setPadding(0, 0, 0, 0);
+        right.setClipToOutline(true);
 
-        // ---- แจ้งแก้ไข ----
+        // ---- หัวดำ ----
+        LinearLayout h = row(this);
+        h.setBackground(glass(this, 0xFF1F2430, 0, 0));
+        h.setPadding(dp(this, 18), dp(this, 12), dp(this, 18), dp(this, 12));
+        LinearLayout hc = col(this);
+        TextView big = text(this, "📍 " + (o.place.isEmpty() ? (o.by.equals("pos") ? "คีย์ที่เครื่อง" : "ออเดอร์") : o.place), 24, true, WHITE);
+        big.setSingleLine(true); big.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        hc.addView(big);
+        String meta = (o.no.isEmpty() ? "" : "#" + o.no + " · ") + "สั่ง " + clockOf(o.createdAt) + " น. · " + (o.by.equals("pos") ? "คีย์ที่เครื่อง" : "จากมือถือ")
+                + (o.status.equals(Order.ST_DONE) ? " · เสร็จแล้ว" : "");
+        TextView mt = text(this, meta, 13, false, 0xBFFFFFFF);
+        mt.setPadding(0, dp(this, 3), 0, 0);
+        hc.addView(mt);
+        h.addView(hc, lpw(1));
         if (o.needsAck()) {
-            LinearLayout ab = row(this);
-            ab.setBackground(glass(this, PURPLE_SOFT, 12, 0xFFD8CCFA));
-            ab.setPadding(dp(this, 14), dp(this, 10), dp(this, 10), dp(this, 10));
-            LinearLayout ac = col(this);
-            ac.addView(text(this, "ออเดอร์นี้ถูกแก้ไขจากมือถือ", 14.5f, true, PURPLE));
-            ac.addView(text(this, "แถวสีม่วง = เปลี่ยน · แถวสีแดงขีดฆ่า = ตัดออก · ตรวจแล้วกดรับทราบ", 12, false, 0xFF6B7280));
-            ab.addView(ac, lpw(1));
-            LinearLayout.LayoutParams abl = lp(MATCH, WRAP); abl.bottomMargin = dp(this, 8);
-            right.addView(ab, abl);
+            TextView ed = lchip("✏️ แก้ไข " + clockOf(o.editedAt), PURPLE, WHITE);
+            LinearLayout.LayoutParams el = lp(WRAP, WRAP); el.rightMargin = dp(this, 12);
+            h.addView(ed, el);
+        } else if (o.status.equals(Order.ST_NEW)) {
+            TextView nw = lchip("ใหม่ — ยังไม่รับ", ORANGE, WHITE);
+            LinearLayout.LayoutParams el = lp(WRAP, WRAP); el.rightMargin = dp(this, 12);
+            h.addView(nw, el);
         }
+        LinearLayout tb = timeBox(o, 64);
+        GradientDrawable tbg = (GradientDrawable) tb.getBackground();
+        tbg.setStroke(dp(this, 3), WHITE);
+        LinearLayout.LayoutParams tl = lp(dp(this, 64), dp(this, 64));
+        h.addView(tb, tl);
+        right.addView(h, lp(MATCH, dp(this, 88)));
 
         // ---- รายการ ----
         ScrollView sv = new ScrollView(this);
         sv.setVerticalScrollBarEnabled(false);
         LinearLayout list = col(this);
+        list.setPadding(dp(this, 18), dp(this, 4), dp(this, 18), dp(this, 4));
         sv.addView(list);
-        // ความสูงรายการ = พื้นที่ทั้งหมด − หัว(64) − บรรทัดย่อย(28) − แถบแจ้งแก้ไข(62 ถ้ามี) − ปุ่ม 2 แถว(124) − ขอบ(32)
-        int listH = Math.max(dp(this, 90), paneH - dp(this, 64 + 28 + (o.needsAck() ? 62 : 0) + 124 + 32));
+        int listH = Math.max(dp(this, 90), paneH - dp(this, 88 + 78 + 124 + 10));
         right.addView(sv, new LinearLayout.LayoutParams(MATCH, listH));
 
-        java.util.regex.Pattern pricePat = java.util.regex.Pattern.compile("^(.*\\S)\\s+(\\d[\\d,]*)\\s*บาท$");
+        java.util.regex.Pattern linePat = java.util.regex.Pattern.compile("^(.*?)(?:\\s+[xX×]\\s*(\\d+))?\\s+(\\d[\\d,]*)\\s*บาท(?:\\s*\\((.*)\\))?\\s*$");
         final boolean showDiff = o.needsAck() && !o.prevLines.isEmpty();
         java.util.Set<String> prevSet = new java.util.HashSet<>(o.prevLines);
         java.util.Set<String> curSet = new java.util.HashSet<>();
         for (String line : o.lines) curSet.add(line.trim());
         String noteTxt = null;
+        int count = 0;
 
         for (String line : o.lines) {
             String t = line.trim();
             if (t.isEmpty()) continue;
-            if (t.startsWith("ช่องทางชำระ") || t.startsWith("สถานะ")) continue;
+            if (t.startsWith("ช่องทางชำระ") || t.startsWith("สถานะ") || t.startsWith("ยอดรวม")) continue;
             if (t.startsWith("หมายเหตุ")) { int i = t.indexOf(":"); noteTxt = i > 0 ? t.substring(i + 1).trim() : t; continue; }
             final boolean changed = showDiff && !prevSet.contains(t);
-            final String s = t;
-            LinearLayout rowv = row(this);
-            rowv.setPadding(dp(this, changed ? 10 : 2), dp(this, 10), dp(this, changed ? 10 : 2), dp(this, 10));
-            if (changed) rowv.setBackground(fill(PURPLE_SOFT, 8));
-
-            int img = t.contains("กุ้งแกะ") ? R.drawable.menu_kae : t.contains("กุ้งผ่า") ? R.drawable.menu_pha : 0;
-            if (img != 0) {
-                android.widget.ImageView iv = new android.widget.ImageView(this);
-                iv.setImageResource(img);
-                iv.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
-                iv.setClipToOutline(true);
-                iv.setBackground(fill(WHITE, 8));
-                LinearLayout.LayoutParams il = lp(dp(this, 72), dp(this, 54)); il.rightMargin = dp(this, 12);
-                rowv.addView(iv, il);
-            }
-            if (changed) {
-                TextView tag = lchip("แก้", PURPLE, WHITE);
-                tag.setTextSize(11); tag.setPadding(dp(this, 8), dp(this, 2), dp(this, 8), dp(this, 2));
-                LinearLayout.LayoutParams tgl = lp(WRAP, WRAP); tgl.rightMargin = dp(this, 10);
-                rowv.addView(tag, tgl);
-            }
-            java.util.regex.Matcher m = pricePat.matcher(t);
-            if (m.find()) {
-                rowv.addView(itemName(m.group(1)), lpw(1));
-                TextView pr = text(this, m.group(2), 16, true, TXT);
-                pr.setPadding(dp(this, 12), 0, 0, 0);
-                rowv.addView(pr);
-            } else {
-                rowv.addView(itemName(t), lpw(1));
-            }
-            Fx.onCopyTap(rowv, () -> copy(s, "คัดลอก: " + s));
-            list.addView(rowv, lp(MATCH, WRAP));
-            list.addView(hline(), lp(MATCH, dp(this, 1)));
+            boolean ship = t.startsWith("ค่าส่ง") || t.startsWith("ส่งฟรี");
+            String name = t, qty = "1", price = "", note = "";
+            java.util.regex.Matcher m = linePat.matcher(t);
+            if (m.find()) { name = m.group(1); if (m.group(2) != null) qty = m.group(2); price = m.group(3); if (m.group(4) != null) note = m.group(4); }
+            else if (ship) price = "0";
+            if (!ship) count += Integer.parseInt(qty);
+            list.addView(ticketRow(name, qty, price, note, ship, changed ? PURPLE_SOFT : 0, changed ? "แก้" : null, t, false), lp(MATCH, WRAP));
+            list.addView(dashed(), lp(MATCH, dp(this, 2)));
         }
         if (showDiff) {
             for (String pv : o.prevLines) {
                 String t = pv.trim();
                 if (t.isEmpty() || curSet.contains(t)) continue;
-                if (t.startsWith("ช่องทางชำระ") || t.startsWith("สถานะ")) continue;
-                LinearLayout rowv = row(this);
-                rowv.setBackground(fill(RED_SOFT, 8));
-                rowv.setPadding(dp(this, 10), dp(this, 8), dp(this, 10), dp(this, 8));
-                TextView tag = lchip("ตัดออก", RED_C, WHITE);
-                tag.setTextSize(11); tag.setPadding(dp(this, 8), dp(this, 2), dp(this, 8), dp(this, 2));
-                LinearLayout.LayoutParams tgl = lp(WRAP, WRAP); tgl.rightMargin = dp(this, 10);
-                rowv.addView(tag, tgl);
-                TextView tv = text(this, t, 15, false, RED_C);
-                tv.setPaintFlags(tv.getPaintFlags() | android.graphics.Paint.STRIKE_THRU_TEXT_FLAG);
-                rowv.addView(tv, lpw(1));
-                LinearLayout.LayoutParams rl2 = lp(MATCH, WRAP); rl2.topMargin = dp(this, 6);
-                list.addView(rowv, rl2);
+                if (t.startsWith("ช่องทางชำระ") || t.startsWith("สถานะ") || t.startsWith("ยอดรวม") || t.startsWith("หมายเหตุ")) continue;
+                String name = t, qty = "1", price = "", note = "";
+                java.util.regex.Matcher m = linePat.matcher(t);
+                if (m.find()) { name = m.group(1); if (m.group(2) != null) qty = m.group(2); price = m.group(3); if (m.group(4) != null) note = m.group(4); }
+                list.addView(ticketRow(name, qty, price, note, false, RED_SOFT, "ตัดออก", t, true), lp(MATCH, WRAP));
+                list.addView(dashed(), lp(MATCH, dp(this, 2)));
             }
         }
-        // รวม (1 บรรทัด) + ช่องทางชำระ (1 บรรทัด ตัวใหญ่)
-        LinearLayout tot = row(this);
-        tot.setPadding(dp(this, 2), dp(this, 14), dp(this, 2), dp(this, 4));
-        tot.addView(text(this, "รวม", 18, true, TXT), lpw(1));
-        tot.addView(text(this, o.total > 0 ? o.total + " บาท" : "—", 24, true, TXT));
-        list.addView(tot, lp(MATCH, WRAP));
-        String payAll = payAllOf(o);
-        if (!payAll.isEmpty()) {
-            boolean paid = payAll.contains("ชำระแล้ว") || payAll.contains("โอนแล้ว");
-            LinearLayout pr = row(this);
-            pr.setBackground(glass(this, paid ? GREEN_SOFT : YEL_SOFT, 12, paid ? GREEN_C : YEL_LINE));
-            pr.setPadding(dp(this, 14), dp(this, 10), dp(this, 14), dp(this, 10));
-            pr.addView(text(this, "ชำระ", 15, false, paid ? GREEN_C : 0xFF92400E), lpw(1));
-            TextView pv = text(this, (paid ? "✅ " : "💰 ") + payAll, 20, true, paid ? GREEN_C : 0xFF92400E);
-            pv.setSingleLine(true); pv.setEllipsize(android.text.TextUtils.TruncateAt.END);
-            pr.addView(pv);
-            LinearLayout.LayoutParams pl = lp(MATCH, WRAP); pl.topMargin = dp(this, 6);
-            final String pa = payAll;
-            Fx.onCopyTap(pr, () -> copy(pa, "คัดลอก: " + pa));
-            list.addView(pr, pl);
-        }
         if (noteTxt != null && !noteTxt.isEmpty()) {
-            TextView nb = text(this, "📝 หมายเหตุ: " + noteTxt, 14.5f, true, 0xFF92400E);
+            TextView nb = text(this, "📝 หมายเหตุ: " + noteTxt, 17, true, 0xFF92400E);
             nb.setBackground(glass(this, YEL_SOFT, 12, YEL_LINE));
-            nb.setPadding(dp(this, 12), dp(this, 10), dp(this, 12), dp(this, 10));
-            LinearLayout.LayoutParams nl = lp(MATCH, WRAP); nl.topMargin = dp(this, 8);
+            nb.setPadding(dp(this, 14), dp(this, 10), dp(this, 14), dp(this, 10));
+            LinearLayout.LayoutParams nl = lp(MATCH, WRAP); nl.topMargin = dp(this, 10);
             final String ntx = noteTxt;
             Fx.onCopyTap(nb, () -> copy(ntx, "คัดลอกหมายเหตุแล้ว"));
             list.addView(nb, nl);
@@ -1169,9 +1111,32 @@ public class OrderBubbleService extends Service {
         hint.setPadding(dp(this, 2), dp(this, 8), 0, 0);
         list.addView(hint);
 
+        // ---- รวม / ชำระ: 2 กล่องใหญ่ ----
+        LinearLayout ft = row(this);
+        ft.setPadding(dp(this, 18), dp(this, 8), dp(this, 18), dp(this, 6));
+        LinearLayout b1 = row(this);
+        b1.setBackground(fill(0xFFF1F2F5, 12));
+        b1.setPadding(dp(this, 14), dp(this, 10), dp(this, 14), dp(this, 10));
+        b1.addView(text(this, "รวม " + count + " รายการ", 14, true, 0xFF5B6270), lpw(1));
+        b1.addView(text(this, o.total > 0 ? o.total + " บาท" : "—", 26, true, TXT));
+        ft.addView(b1, lpw(1));
+        String payAll = payAllOf(o);
+        boolean paid = payAll.contains("ชำระแล้ว") || payAll.contains("โอนแล้ว");
+        LinearLayout b2 = row(this);
+        b2.setBackground(glass(this, paid ? GREEN_SOFT : YEL_SOFT, 12, paid ? GREEN_C : YEL_LINE));
+        b2.setPadding(dp(this, 14), dp(this, 10), dp(this, 14), dp(this, 10));
+        b2.addView(text(this, "ชำระ", 14, true, paid ? GREEN_C : 0xFF92400E), lpw(1));
+        TextView pv = text(this, payAll.isEmpty() ? "—" : (paid ? "✅ " : "💰 ") + payAll, 20, true, paid ? GREEN_C : 0xFF92400E);
+        pv.setSingleLine(true); pv.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        b2.addView(pv);
+        LinearLayout.LayoutParams b2l = lpw(1.2f); b2l.leftMargin = dp(this, 10);
+        if (!payAll.isEmpty()) { final String pa = payAll; Fx.onCopyTap(b2, () -> copy(pa, "คัดลอก: " + pa)); }
+        ft.addView(b2, b2l);
+        right.addView(ft, lp(MATCH, dp(this, 78)));
+
         // ---- ปุ่ม: แถวบน = คัดลอก (รอง) · แถวล่าง = ปุ่มหลักใหญ่ ----
         LinearLayout r1 = row(this);
-        r1.setPadding(0, dp(this, 10), 0, 0);
+        r1.setPadding(dp(this, 18), dp(this, 4), dp(this, 18), 0);
         TextView cpP = lbtn("📋 คัดลอกที่อยู่", false);
         cpP.setTextSize(13.5f);
         if (!o.place.isEmpty()) { final String plc = o.place; Fx.onCopyTap(cpP, () -> copy(plc, "คัดลอก: " + plc)); }
@@ -1185,7 +1150,7 @@ public class OrderBubbleService extends Service {
         right.addView(r1, lp(MATCH, WRAP));
 
         LinearLayout r2 = row(this);
-        r2.setPadding(0, dp(this, 8), 0, 0);
+        r2.setPadding(dp(this, 18), dp(this, 8), dp(this, 18), dp(this, 14));
         boolean urgent = unreadIds.contains(o.id);
         int nBtn = 0;
         if (o.needsAck()) {
@@ -1211,7 +1176,7 @@ public class OrderBubbleService extends Service {
             r2.addView(doing, dl); nBtn++;
         }
         if (!o.status.equals(Order.ST_DONE)) {
-            boolean primaryDone = nBtn == 0;   // กำลังทำอยู่ → "เสร็จแล้ว" เป็นปุ่มหลัก
+            boolean primaryDone = nBtn == 0;
             TextView done = primaryDone ? lbtnColor("✅ เสร็จแล้ว — ส่งออก", GREEN_C, WHITE, 0) : lbtnColor("✅ เสร็จแล้ว", CARD, GREEN_C, GREEN_C);
             done.setTextSize(16); done.setPadding(dp(this, 16), dp(this, 16), dp(this, 16), dp(this, 16));
             Fx.onTap(done, () -> updateStatus(o, Order.ST_DONE));
@@ -1224,6 +1189,69 @@ public class OrderBubbleService extends Service {
             r2.addView(re, lpw(1));
         }
         right.addView(r2, lp(MATCH, WRAP));
+    }
+
+    /** 1 แถวในใบสั่งครัว: [จำนวน] [รูป] ชื่อ+โน้ต ............ ราคา */
+    private LinearLayout ticketRow(String name, String qty, String price, String note, boolean ship, int bg, String tag, final String copyTxt, boolean removed) {
+        LinearLayout rowv = row(this);
+        rowv.setPadding(dp(this, bg != 0 ? 8 : 0), dp(this, 10), dp(this, bg != 0 ? 8 : 0), dp(this, 10));
+        if (bg != 0) rowv.setBackground(fill(bg, 10));
+
+        TextView q = text(this, ship ? "🛵" : qty, ship ? 20 : 26, true, WHITE);
+        q.setGravity(Gravity.CENTER);
+        q.setBackground(fill(removed ? RED_C : ship ? 0xFF9AA1AE : ORANGE, 12));
+        q.setIncludeFontPadding(false);
+        LinearLayout.LayoutParams ql = lp(dp(this, 52), dp(this, 52)); ql.rightMargin = dp(this, 14);
+        rowv.addView(q, ql);
+
+        int img = name.contains("กุ้งแกะ") ? R.drawable.menu_kae : name.contains("กุ้งผ่า") ? R.drawable.menu_pha : 0;
+        if (img != 0) {
+            android.widget.ImageView iv = new android.widget.ImageView(this);
+            iv.setImageResource(img);
+            iv.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
+            iv.setClipToOutline(true);
+            iv.setBackground(fill(WHITE, 8));
+            LinearLayout.LayoutParams il = lp(dp(this, 64), dp(this, 48)); il.rightMargin = dp(this, 12);
+            rowv.addView(iv, il);
+        }
+
+        LinearLayout nc = col(this);
+        LinearLayout nr = row(this);
+        if (tag != null) {
+            TextView tg = lchip(tag, removed ? RED_C : PURPLE, WHITE);
+            tg.setTextSize(11); tg.setPadding(dp(this, 8), dp(this, 2), dp(this, 8), dp(this, 2));
+            LinearLayout.LayoutParams tgl = lp(WRAP, WRAP); tgl.rightMargin = dp(this, 8);
+            nr.addView(tg, tgl);
+        }
+        TextView nm = text(this, name, ship ? 17 : 22, !ship, removed ? RED_C : ship ? 0xFF5B6270 : TXT);
+        if (removed) nm.setPaintFlags(nm.getPaintFlags() | android.graphics.Paint.STRIKE_THRU_TEXT_FLAG);
+        nr.addView(nm, lpw(1));
+        nc.addView(nr, lp(MATCH, WRAP));
+        if (!note.isEmpty()) {
+            TextView nt = text(this, "📝 " + note, 13.5f, true, 0xFF92400E);
+            nt.setBackground(fill(YEL_SOFT, 6));
+            nt.setPadding(dp(this, 8), dp(this, 2), dp(this, 8), dp(this, 2));
+            LinearLayout.LayoutParams ntl = lp(WRAP, WRAP); ntl.topMargin = dp(this, 4);
+            nc.addView(nt, ntl);
+        }
+        rowv.addView(nc, lpw(1));
+
+        TextView pr = text(this, price.isEmpty() ? "" : price, 20, true, 0xFF5B6270);
+        pr.setPadding(dp(this, 12), 0, 0, 0);
+        rowv.addView(pr);
+        Fx.onCopyTap(rowv, () -> copy(copyTxt, "คัดลอก: " + copyTxt));
+        return rowv;
+    }
+
+    /** เส้นประแบบใบเสร็จ */
+    private View dashed() {
+        View v = new View(this);
+        GradientDrawable g = new GradientDrawable();
+        g.setShape(GradientDrawable.LINE);
+        g.setStroke(dp(this, 2), 0xFFDFE2E8, dp(this, 6), dp(this, 5));
+        v.setBackground(g);
+        v.setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+        return v;
     }
 
     private TextView itemName(String s) {
