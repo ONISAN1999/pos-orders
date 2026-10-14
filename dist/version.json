@@ -1,1 +1,1 @@
-{"versionCode":20,"versionName":"3.6","build":61,"apk":"https://raw.githubusercontent.com/ONISAN1999/pos-orders/main/dist/POSOrders.apk","notes":"แสดงรายการเมนูในหน้ารายละเอียด (แก้พื้นที่ว่าง) + จัดปุ่มใหม่: แถวบนคัดลอก แถวล่างปุ่มหลักใหญ่ ","at":"2026-10-14T14:05:13Z"}
+{"versionCode":21,"versionName":"3.7","build":64,"apk":"https://raw.githubusercontent.com/ONISAN1999/pos-orders/main/dist/POSOrders.apk","notes":"หน้ารายละเอียด: ยอดรวม 1 บรรทัดตัวใหญ่ + ช่องทางชำระ 1 บรรทัดตัวใหญ่ (เขียว = ชำระแล้ว / เหลือง = ยังไม่ชำระ) ","at":"2026-10-14T15:30:10Z"}
