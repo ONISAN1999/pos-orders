@@ -996,6 +996,19 @@ public class OrderBubbleService extends Service {
         }
     }
 
+    /** ทุกบรรทัดชำระ (ช่องทาง · สถานะ) รวมเป็นข้อความเดียว */
+    private String payAllOf(Order o) {
+        List<String> parts = new ArrayList<>();
+        for (String pl : o.pay.split("\\n")) {
+            String q = pl.trim();
+            if (q.isEmpty() || q.startsWith("หมายเหตุ")) continue;
+            int i = q.indexOf(":");
+            String v = i > 0 ? q.substring(i + 1).trim() : q;
+            if (!v.isEmpty() && !parts.contains(v)) parts.add(v);
+        }
+        return String.join(" · ", parts);
+    }
+
     private String firstPay(Order o) {
         for (String pl : o.pay.split("\\n")) {
             String q = pl.trim();
@@ -1122,14 +1135,27 @@ public class OrderBubbleService extends Service {
                 list.addView(rowv, rl2);
             }
         }
-        // รวม + ชำระ
+        // รวม (1 บรรทัด) + ช่องทางชำระ (1 บรรทัด ตัวใหญ่)
         LinearLayout tot = row(this);
-        tot.setPadding(dp(this, 2), dp(this, 12), dp(this, 2), dp(this, 4));
-        tot.addView(text(this, "รวม", 17, true, TXT), lpw(1));
-        String payTxt = firstPay(o);
-        tot.addView(text(this, (o.total > 0 ? o.total + " บาท" : "—") + (payTxt.isEmpty() ? "" : " · " + payTxt), 17, true,
-                payTxt.contains("ชำระแล้ว") || payTxt.contains("โอน") ? GREEN_C : TXT));
+        tot.setPadding(dp(this, 2), dp(this, 14), dp(this, 2), dp(this, 4));
+        tot.addView(text(this, "รวม", 18, true, TXT), lpw(1));
+        tot.addView(text(this, o.total > 0 ? o.total + " บาท" : "—", 24, true, TXT));
         list.addView(tot, lp(MATCH, WRAP));
+        String payAll = payAllOf(o);
+        if (!payAll.isEmpty()) {
+            boolean paid = payAll.contains("ชำระแล้ว") || payAll.contains("โอนแล้ว");
+            LinearLayout pr = row(this);
+            pr.setBackground(glass(this, paid ? GREEN_SOFT : YEL_SOFT, 12, paid ? GREEN_C : YEL_LINE));
+            pr.setPadding(dp(this, 14), dp(this, 10), dp(this, 14), dp(this, 10));
+            pr.addView(text(this, "ชำระ", 15, false, paid ? GREEN_C : 0xFF92400E), lpw(1));
+            TextView pv = text(this, (paid ? "✅ " : "💰 ") + payAll, 20, true, paid ? GREEN_C : 0xFF92400E);
+            pv.setSingleLine(true); pv.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            pr.addView(pv);
+            LinearLayout.LayoutParams pl = lp(MATCH, WRAP); pl.topMargin = dp(this, 6);
+            final String pa = payAll;
+            Fx.onCopyTap(pr, () -> copy(pa, "คัดลอก: " + pa));
+            list.addView(pr, pl);
+        }
         if (noteTxt != null && !noteTxt.isEmpty()) {
             TextView nb = text(this, "📝 หมายเหตุ: " + noteTxt, 14.5f, true, 0xFF92400E);
             nb.setBackground(glass(this, YEL_SOFT, 12, YEL_LINE));
