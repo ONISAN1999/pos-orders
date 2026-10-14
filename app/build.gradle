@@ -10,8 +10,8 @@ android {
         applicationId "com.messespos.app"
         minSdk 26
         targetSdk 34
-        versionCode 16
-        versionName "3.2"
+        versionCode 17
+        versionName "3.3"
     }
 
     // ลายเซ็นคงที่ — ติดตั้งทับเวอร์ชันเดิมได้เลย
