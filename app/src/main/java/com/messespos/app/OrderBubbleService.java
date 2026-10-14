@@ -120,11 +120,11 @@ public class OrderBubbleService extends Service {
         b.setBackground(bubbleBg(this));
         b.setElevation(dp(this, 12));
 
-        mainIcon = text(this, "🧾", 20, false, WHITE);
+        mainIcon = text(this, "🧾", 20, false, 0xFF1F2430);
         mainIcon.setGravity(Gravity.CENTER);
         b.addView(mainIcon);
 
-        mainCount = text(this, "0 ออเดอร์", 10.5f, true, WHITE);
+        mainCount = text(this, "0 ออเดอร์", 10.5f, true, 0xFF1F2430);
         mainCount.setGravity(Gravity.CENTER);
         b.addView(mainCount);
 
@@ -220,11 +220,11 @@ public class OrderBubbleService extends Service {
                 if (mainBubble != null) {
                     GradientDrawable gb = new GradientDrawable();
                     gb.setShape(GradientDrawable.OVAL);
-                    gb.setColor(0xFF6B7280);
+                    gb.setColor(0xFFF1F2F5);
                     gb.setStroke(dp(this, 3), 0xFFEF4444);
                     mainBubble.setBackground(gb);
                 }
-                if (mainCount != null) mainCount.setText("ไม่มีเน็ต");
+                if (mainCount != null) { mainCount.setText("ไม่มีเน็ต"); mainCount.setTextColor(0xFFEF4444); }
                 Alert.ping(this, Alert.NET);
                 Toast.makeText(this, "⚠️ ต่อคลาวด์ไม่ได้เกิน 1 นาที — เช็ค WiFi ของเครื่อง POS", Toast.LENGTH_LONG).show();
             } else {
@@ -240,8 +240,8 @@ public class OrderBubbleService extends Service {
         b.setGravity(Gravity.CENTER);
         GradientDrawable g = new GradientDrawable();
         g.setShape(GradientDrawable.OVAL);
-        g.setColor(0xFF1E2A44);
-        g.setStroke(dp(this, 2), 0xFFFFFFFF);
+        g.setColor(0xFFFFFFFF);
+        g.setStroke(dp(this, 2), 0xFFDFE2E8);
         b.setBackground(g);
         b.setElevation(dp(this, 13));
         listBubble = b;
@@ -327,14 +327,20 @@ public class OrderBubbleService extends Service {
 
         GradientDrawable g = new GradientDrawable();
         g.setShape(GradientDrawable.OVAL);
-        g.setColor(o.tierColor());
         boolean edited = o.needsAck();
-        g.setStroke(dp(this, (unread || edited) ? 4 : 2), unread ? 0xFFFF2D55 : edited ? 0xFF7C3AED : 0xB3FFFFFF);
+        if (unread) {
+            g.setColors(new int[]{edited ? 0xFF7C3AED : 0xFFF05A28, edited ? 0xFFA78BFA : 0xFFFF8A3D});
+            g.setStroke(dp(this, 3), 0xFFFFFFFF);
+        } else {
+            g.setColor(0xFFFFFFFF);
+            g.setStroke(dp(this, 4), edited ? 0xFF7C3AED : o.tierColor());
+        }
         c.setBackground(g);
 
         tag.setText(unread ? (edited ? "แก้ไข!" : "ใหม่!") : edited ? "แก้ไข" : o.tag());
-        tag.setTextColor(unread ? 0xFFB3001B : edited ? 0xFF4C1D95 : 0xFF11141C);
+        tag.setTextColor(unread ? 0xFFFFFFFF : edited ? 0xFF7C3AED : 0xFF1F2430);
         clk.setText(o.clock());
+        clk.setTextColor(unread ? 0xFFFFFFFF : o.waitedMin() >= 50 ? 0xFFEF4444 : 0xFF1F2430);
 
         if (unread) startPulse(c); else stopPulse(c);
     }
@@ -350,12 +356,14 @@ public class OrderBubbleService extends Service {
             if (unread > 0) {
                 GradientDrawable g = new GradientDrawable();
                 g.setShape(GradientDrawable.OVAL);
-                g.setColors(new int[]{0xFFFF3B5C, 0xFFFF7A45});
+                g.setColors(new int[]{0xFFF05A28, 0xFFFF8A3D});
                 g.setStroke(dp(this, 3), 0xFFFFFFFF);
                 mainBubble.setBackground(g);
+                mainIcon.setTextColor(WHITE); mainCount.setTextColor(WHITE);
                 startPulse(mainBubble);
             } else {
                 mainBubble.setBackground(bubbleBg(this));
+                mainIcon.setTextColor(0xFF1F2430); mainCount.setTextColor(0xFF1F2430);
                 stopPulse(mainBubble);
             }
         }

@@ -72,12 +72,12 @@ public class UI {
         return g;
     }
 
-    /** วงกลม bubble */
+    /** วงกลม bubble — ธีมสว่าง: พื้นขาว ขอบส้ม */
     public static GradientDrawable bubbleBg(Context c) {
-        GradientDrawable g = new GradientDrawable(
-                GradientDrawable.Orientation.TL_BR, new int[]{0xFFFF7A9A, 0xFFFF9D6C});
+        GradientDrawable g = new GradientDrawable();
         g.setShape(GradientDrawable.OVAL);
-        g.setStroke(dp(c, 2), STROKE);
+        g.setColor(0xFFFFFFFF);
+        g.setStroke(dp(c, 3), 0xFFF05A28);
         return g;
     }
 
