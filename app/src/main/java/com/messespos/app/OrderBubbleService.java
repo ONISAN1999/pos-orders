@@ -37,7 +37,10 @@ import static com.messespos.app.UI.*;
 public class OrderBubbleService extends Service {
 
     private WindowManager wm;
-    private View mainBubble;
+    private View mainBubble;              // หน้าต่างฟองแม่ (โปร่ง) = วงกลม + ป้ายแดง + จุดคลาวด์
+    private LinearLayout mainDisc;        // วงกลมขาวขอบส้ม
+    private android.widget.ImageView mainIconV;
+    private TextView mainBadge;
     private TextView mainCount;
     private WindowManager.LayoutParams mainParams;
 
@@ -67,11 +70,12 @@ public class OrderBubbleService extends Service {
     private static final String CH = "pos_orders";
 
     private static final int MAIN_DP = 70;
-    private static final int CHILD_DP = 64;
+    private static final int MAIN_PAD = 12;                     // ขอบว่างรอบวงกลมแม่ (ที่วางป้าย + เงา)
+    private static final int MAIN_WIN = MAIN_DP + MAIN_PAD * 2;
+    private static final int CHILD_DP = 66;
     private static final int PAD_DP = 8;                       // ขอบว่างรอบฟองย่อย ให้พื้นที่ตอนเต้น
     private static final int CHILD_WIN = CHILD_DP + PAD_DP * 2; // ขนาดหน้าต่างจริงของฟองย่อย
     private static final int RADIUS_DP = 104;
-    private TextView mainIcon;
 
     @Override public IBinder onBind(Intent i) { return null; }
 
@@ -115,28 +119,63 @@ public class OrderBubbleService extends Service {
     /* ================= Bubble แม่ ================= */
 
     private void addMainBubble() {
+        android.widget.FrameLayout outer = new android.widget.FrameLayout(this);
+        int s = dp(this, MAIN_DP), win = dp(this, MAIN_WIN);
+
         LinearLayout b = col(this);
         b.setGravity(Gravity.CENTER);
         b.setBackground(bubbleBg(this));
-        b.setElevation(dp(this, 12));
+        b.setElevation(dp(this, 10));
+        android.widget.FrameLayout.LayoutParams bl = new android.widget.FrameLayout.LayoutParams(s, s);
+        bl.gravity = Gravity.CENTER;
+        outer.addView(b, bl);
+        mainDisc = b;
 
-        mainIcon = text(this, "🧾", 20, false, 0xFF1F2430);
-        mainIcon.setGravity(Gravity.CENTER);
-        b.addView(mainIcon);
+        mainIconV = new android.widget.ImageView(this);
+        mainIconV.setImageResource(R.drawable.ic_receipt);
+        mainIconV.setColorFilter(0xFFF05A28);
+        b.addView(mainIconV, lp(dp(this, 30), dp(this, 30)));
 
-        mainCount = text(this, "0 ออเดอร์", 10.5f, true, 0xFF1F2430);
+        mainCount = text(this, "0 ออเดอร์", 10, true, 0xFF1F2430);
         mainCount.setGravity(Gravity.CENTER);
+        mainCount.setPadding(0, dp(this, 1), 0, 0);
         b.addView(mainCount);
 
-        mainBubble = b;
+        // ป้ายแดง: จำนวนออเดอร์ที่ยังไม่รับ
+        mainBadge = text(this, "", 11.5f, true, WHITE);
+        mainBadge.setGravity(Gravity.CENTER);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0xFFEF4444); bg.setCornerRadius(dp(this, 20)); bg.setStroke(dp(this, 2), WHITE);
+        mainBadge.setBackground(bg);
+        mainBadge.setMinWidth(dp(this, 24));
+        mainBadge.setPadding(dp(this, 6), dp(this, 1), dp(this, 6), dp(this, 1));
+        mainBadge.setElevation(dp(this, 14));
+        mainBadge.setVisibility(View.GONE);
+        android.widget.FrameLayout.LayoutParams bdl = new android.widget.FrameLayout.LayoutParams(WRAP, dp(this, 24));
+        bdl.gravity = Gravity.TOP | Gravity.END;
+        bdl.topMargin = dp(this, MAIN_PAD - 6); bdl.rightMargin = dp(this, MAIN_PAD - 6);
+        outer.addView(mainBadge, bdl);
 
-        int s = dp(this, MAIN_DP);
+        // จุดสถานะคลาวด์ มุมล่างขวาในฟอง
+        netDot = text(this, "", 1, false, 0);
+        GradientDrawable g = new GradientDrawable();
+        g.setShape(GradientDrawable.OVAL); g.setColor(0xFF94A3B8); g.setStroke(dp(this, 2), WHITE);
+        netDot.setBackground(g);
+        netDot.setElevation(dp(this, 14));
+        int ds = dp(this, 14);
+        android.widget.FrameLayout.LayoutParams ndl = new android.widget.FrameLayout.LayoutParams(ds, ds);
+        ndl.gravity = Gravity.BOTTOM | Gravity.END;
+        ndl.bottomMargin = dp(this, MAIN_PAD + 2); ndl.rightMargin = dp(this, MAIN_PAD + 4);
+        outer.addView(netDot, ndl);
+
+        mainBubble = outer;
+
         DisplayMetrics dm = getResources().getDisplayMetrics();
-        mainParams = new WindowManager.LayoutParams(s, s, wtype(),
+        mainParams = new WindowManager.LayoutParams(win, win, wtype(),
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT);
         mainParams.gravity = Gravity.TOP | Gravity.START;
-        mainParams.x = (dm.widthPixels - s) / 2;      // เริ่มตรงกลางจอ
-        mainParams.y = (dm.heightPixels - s) / 2;
+        mainParams.x = (dm.widthPixels - win) / 2;      // เริ่มตรงกลางจอ
+        mainParams.y = (dm.heightPixels - win) / 2;
 
         mainBubble.setOnTouchListener(new View.OnTouchListener() {
             int ix, iy; float tx, ty; boolean moved;
@@ -155,12 +194,11 @@ public class OrderBubbleService extends Service {
                         wm.updateViewLayout(mainBubble, mainParams);
                         layoutChildren();   // ลูกตามพ่อ
                         placeListBubble();
-                        placeNetDot();
                         return true;
                     case MotionEvent.ACTION_UP:
                         if (!moved) {
                             Fx.sound(OrderBubbleService.this);
-                            Fx.bounce(mainBubble);
+                            Fx.bounce(mainDisc);
                             if (panel != null) closePanel();
                             else if (childViews.isEmpty()) openList();
                             else toggleExpand();
@@ -174,34 +212,6 @@ public class OrderBubbleService extends Service {
 
         wm.addView(mainBubble, mainParams);
         addListBubble();
-        addNetDot();
-    }
-
-    /** จุดสัญญาณคลาวด์: เขียว < 20 วิ, เหลือง < 60 วิ, แดง = หลุดเกิน 1 นาที */
-    private void addNetDot() {
-        netDot = text(this, "", 9, true, WHITE);
-        netDot.setGravity(Gravity.CENTER);
-        GradientDrawable g = new GradientDrawable();
-        g.setShape(GradientDrawable.OVAL);
-        g.setColor(0xFF94A3B8);
-        g.setStroke(dp(this, 2), 0xFFFFFFFF);
-        netDot.setBackground(g);
-        netDot.setElevation(dp(this, 15));
-        int s = dp(this, 18);
-        netParams = new WindowManager.LayoutParams(s, s, wtype(),
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE, PixelFormat.TRANSLUCENT);
-        netParams.gravity = Gravity.TOP | Gravity.START;
-        wm.addView(netDot, netParams);
-        placeNetDot();
-    }
-
-    private void placeNetDot() {
-        if (netDot == null) return;
-        int mainS = dp(this, MAIN_DP), s = dp(this, 18);
-        DisplayMetrics dm = getResources().getDisplayMetrics();
-        netParams.x = Math.max(0, Math.min(mainParams.x + mainS - s + dp(this, 2), dm.widthPixels - s));
-        netParams.y = Math.max(0, Math.min(mainParams.y - dp(this, 2), dm.heightPixels - s));
-        try { wm.updateViewLayout(netDot, netParams); } catch (Exception ignored) {}
     }
 
     private void refreshNetDot() {
@@ -217,15 +227,18 @@ public class OrderBubbleService extends Service {
         if (lost != netLost) {
             netLost = lost;
             if (lost) {
-                if (mainBubble != null) {
+                if (mainDisc != null) {
                     GradientDrawable gb = new GradientDrawable();
                     gb.setShape(GradientDrawable.OVAL);
                     gb.setColor(0xFFF1F2F5);
                     gb.setStroke(dp(this, 3), 0xFFEF4444);
-                    mainBubble.setBackground(gb);
+                    mainDisc.setBackground(gb);
+                    stopPulse(mainDisc);
                 }
+                if (mainIconV != null) mainIconV.setColorFilter(0xFF9AA1AE);
                 if (mainCount != null) { mainCount.setText("ไม่มีเน็ต"); mainCount.setTextColor(0xFFEF4444); }
                 Alert.ping(this, Alert.NET);
+                if (mainBadge != null) mainBadge.setVisibility(View.GONE);
                 Toast.makeText(this, "⚠️ ต่อคลาวด์ไม่ได้เกิน 1 นาที — เช็ค WiFi ของเครื่อง POS", Toast.LENGTH_LONG).show();
             } else {
                 refreshMain();
@@ -256,9 +269,9 @@ public class OrderBubbleService extends Service {
 
     private void placeListBubble() {
         if (listBubble == null) return;
-        int mainS = dp(this, MAIN_DP), s = dp(this, 38);
+        int pad = dp(this, MAIN_PAD), mainS = dp(this, MAIN_DP), s = dp(this, 38);
         DisplayMetrics dm = getResources().getDisplayMetrics();
-        int x = mainParams.x + mainS - s / 2, y = mainParams.y + mainS - s / 2;
+        int x = mainParams.x + pad - s / 2 + dp(this, 6), y = mainParams.y + pad + mainS - s / 2 - dp(this, 4);
         listParams.x = Math.max(0, Math.min(x, dm.widthPixels - s));
         listParams.y = Math.max(0, Math.min(y, dm.heightPixels - s));
         try { wm.updateViewLayout(listBubble, listParams); } catch (Exception ignored) {}
@@ -284,25 +297,33 @@ public class OrderBubbleService extends Service {
 
             // หน้าต่างนอก (โปร่ง) → วงกลมข้างใน (เต้นได้โดยไม่โดนตัดขอบ)
             android.widget.FrameLayout outer = new android.widget.FrameLayout(this);
-            LinearLayout c = col(this);
-            c.setGravity(Gravity.CENTER);
-            c.setElevation(dp(this, 9));
+            android.widget.FrameLayout disc = new android.widget.FrameLayout(this);
+            disc.setElevation(dp(this, 8));
             android.widget.FrameLayout.LayoutParams cl = new android.widget.FrameLayout.LayoutParams(s, s);
             cl.gravity = Gravity.CENTER;
-            outer.addView(c, cl);
+            outer.addView(disc, cl);
 
-            TextView tag = text(this, "", 11, true, 0xFF11141C);
-            tag.setGravity(Gravity.CENTER);
-            tag.setSingleLine(true);
-            c.addView(tag);
+            RingView ring = new RingView(this);
+            disc.addView(ring, new android.widget.FrameLayout.LayoutParams(MATCH, MATCH));
 
-            TextView clk = text(this, "", 12.5f, true, 0xFF11141C);
-            clk.setGravity(Gravity.CENTER);
-            clk.setSingleLine(true);
-            c.addView(clk);
+            LinearLayout c = col(this);
+            c.setGravity(Gravity.CENTER);
+            disc.addView(c, new android.widget.FrameLayout.LayoutParams(MATCH, MATCH));
+
+            TextView num = text(this, "", 19, true, 0xFF1F2430);
+            num.setGravity(Gravity.CENTER);
+            num.setSingleLine(true);
+            num.setIncludeFontPadding(false);
+            c.addView(num);
+
+            TextView sub = text(this, "", 9.5f, true, 0xFF8A91A0);
+            sub.setGravity(Gravity.CENTER);
+            sub.setSingleLine(true);
+            sub.setPadding(dp(this, 6), dp(this, 1), dp(this, 6), 0);
+            c.addView(sub);
 
             final String oid = o.id;
-            Fx.onTap(c, () -> openDetail(oid));
+            Fx.onTap(disc, () -> openDetail(oid));
 
             WindowManager.LayoutParams p = new WindowManager.LayoutParams(win, win, wtype(),
                     WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT);
@@ -320,51 +341,84 @@ public class OrderBubbleService extends Service {
 
     /** ใส่ข้อความ/สี/สถานะอ่านแล้วให้ฟองย่อย 1 ฟอง */
     private void bindChild(View outer, Order o) {
-        LinearLayout c = (LinearLayout) ((android.widget.FrameLayout) outer).getChildAt(0);
-        TextView tag = (TextView) c.getChildAt(0);
-        TextView clk = (TextView) c.getChildAt(1);
+        android.widget.FrameLayout disc = (android.widget.FrameLayout) ((android.widget.FrameLayout) outer).getChildAt(0);
+        RingView ring = (RingView) disc.getChildAt(0);
+        LinearLayout c = (LinearLayout) disc.getChildAt(1);
+        TextView num = (TextView) c.getChildAt(0);
+        TextView sub = (TextView) c.getChildAt(1);
         boolean unread = unreadIds.contains(o.id);
+        boolean edited = o.needsAck();
+        int m = o.waitedMin();
+        String who = !o.no.isEmpty() ? "#" + o.no : o.place.isEmpty() ? "" : (o.place.length() > 9 ? o.place.substring(0, 9) + "…" : o.place);
 
         GradientDrawable g = new GradientDrawable();
         g.setShape(GradientDrawable.OVAL);
-        boolean edited = o.needsAck();
         if (unread) {
             g.setColors(new int[]{edited ? 0xFF7C3AED : 0xFFF05A28, edited ? 0xFFA78BFA : 0xFFFF8A3D});
-            g.setStroke(dp(this, 3), 0xFFFFFFFF);
+            g.setStroke(dp(this, 3), WHITE);
+            ring.setVisibility(View.INVISIBLE);
+            num.setText(edited ? "แก้ไข!" : "ใหม่!");
+            num.setTextSize(15);
+            num.setTextColor(WHITE);
+            sub.setText((who.isEmpty() ? "" : who + " · ") + o.clock());
+            sub.setTextColor(0xFFFFFFFF);
         } else {
-            g.setColor(0xFFFFFFFF);
-            g.setStroke(dp(this, 4), edited ? 0xFF7C3AED : o.tierColor());
+            g.setColor(WHITE);
+            ring.setVisibility(View.VISIBLE);
+            boolean late = m >= 50;
+            ring.set(m / 60f, edited ? 0xFF7C3AED : o.tierColor(), late ? 0xFFFEE2E2 : 0xFFEEF0F3);
+            num.setText(String.valueOf(m));
+            num.setTextSize(19);
+            num.setTextColor(late ? 0xFFEF4444 : edited ? 0xFF7C3AED : 0xFF1F2430);
+            sub.setText("นาที" + (who.isEmpty() ? "" : " · " + who));
+            sub.setTextColor(late ? 0xFFEF4444 : 0xFF8A91A0);
         }
-        c.setBackground(g);
+        disc.setBackground(g);
 
-        tag.setText(unread ? (edited ? "แก้ไข!" : "ใหม่!") : edited ? "แก้ไข" : o.tag());
-        tag.setTextColor(unread ? 0xFFFFFFFF : edited ? 0xFF7C3AED : 0xFF1F2430);
-        clk.setText(o.clock());
-        clk.setTextColor(unread ? 0xFFFFFFFF : o.waitedMin() >= 50 ? 0xFFEF4444 : 0xFF1F2430);
-
-        if (unread) startPulse(c); else stopPulse(c);
+        if (unread) startPulse(disc); else stopPulse(disc);
     }
 
-    /** ฟองแม่: ไอคอน + จำนวน; มีออเดอร์ยังไม่อ่าน → กระดิ่ง + ขอบแดง + เต้น */
+    /** วงแหวนความคืบหน้ารอบฟองย่อย (เต็มวง = 60 นาที) */
+    static class RingView extends View {
+        float progress = 0f; int color = 0xFF22C55E, track = 0xFFEEF0F3;
+        final android.graphics.Paint p = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        RingView(android.content.Context c) {
+            super(c);
+            p.setStyle(android.graphics.Paint.Style.STROKE);
+            p.setStrokeCap(android.graphics.Paint.Cap.ROUND);
+        }
+        void set(float pr, int col, int tr) { progress = pr; color = col; track = tr; invalidate(); }
+        @Override protected void onDraw(android.graphics.Canvas cv) {
+            float sw = dp(getContext(), 5);
+            p.setStrokeWidth(sw);
+            android.graphics.RectF r = new android.graphics.RectF(sw / 2 + 1, sw / 2 + 1, getWidth() - sw / 2 - 1, getHeight() - sw / 2 - 1);
+            p.setColor(track);
+            cv.drawOval(r, p);
+            p.setColor(color);
+            cv.drawArc(r, -90, 360f * Math.max(0.03f, Math.min(1f, progress)), false, p);
+        }
+    }
+
+    /** ฟองแม่: ไอคอน + จำนวน; มีออเดอร์ยังไม่อ่าน → ส้มเต็ม + ป้ายแดง + เต้น */
     private void refreshMain() {
         if (netLost) return;
         int n = activeOrders().size();
         int unread = unreadIds.size();
-        if (mainCount != null) mainCount.setText(unread > 0 ? "ใหม่ " + unread : n + " ออเดอร์");
-        if (mainIcon != null) mainIcon.setText(unread > 0 ? "🔔" : "🧾");
-        if (mainBubble != null) {
+        if (mainCount != null) mainCount.setText(unread > 0 ? "ใหม่!" : n + " ออเดอร์");
+        if (mainBadge != null) { mainBadge.setText(String.valueOf(unread)); mainBadge.setVisibility(unread > 0 ? View.VISIBLE : View.GONE); }
+        if (mainDisc != null) {
             if (unread > 0) {
                 GradientDrawable g = new GradientDrawable();
                 g.setShape(GradientDrawable.OVAL);
                 g.setColors(new int[]{0xFFF05A28, 0xFFFF8A3D});
                 g.setStroke(dp(this, 3), 0xFFFFFFFF);
-                mainBubble.setBackground(g);
-                mainIcon.setTextColor(WHITE); mainCount.setTextColor(WHITE);
-                startPulse(mainBubble);
+                mainDisc.setBackground(g);
+                mainIconV.setColorFilter(WHITE); mainCount.setTextColor(WHITE);
+                startPulse(mainDisc);
             } else {
-                mainBubble.setBackground(bubbleBg(this));
-                mainIcon.setTextColor(0xFF1F2430); mainCount.setTextColor(0xFF1F2430);
-                stopPulse(mainBubble);
+                mainDisc.setBackground(bubbleBg(this));
+                mainIconV.setColorFilter(0xFFF05A28); mainCount.setTextColor(0xFF1F2430);
+                stopPulse(mainDisc);
             }
         }
     }
@@ -397,7 +451,7 @@ public class OrderBubbleService extends Service {
     private void layoutChildren() {
         int n = childViews.size();
         if (n == 0) return;
-        int mainS = dp(this, MAIN_DP), childS = dp(this, CHILD_WIN);
+        int mainS = dp(this, MAIN_WIN), childS = dp(this, CHILD_WIN);
         int cx = mainParams.x + mainS / 2;
         int cy = mainParams.y + mainS / 2;
         DisplayMetrics dm = getResources().getDisplayMetrics();
@@ -479,7 +533,7 @@ public class OrderBubbleService extends Service {
             if (done == 1 && m < READY_MIN + 1) continue;   // รอบ 2 ห่างจากรอบแรก 1 นาที
             readyPinged.put(o.id, done + 1);
             Alert.ping(this, Alert.READY);
-            if (mainBubble != null) Fx.bounce(mainBubble);
+            if (mainDisc != null) Fx.bounce(mainDisc);
             String who = (o.no.isEmpty() ? "" : "#" + o.no + " ") + o.place;
             Toast.makeText(this, "⏰ ออเดอร์ " + who.trim() + " ครบ " + READY_MIN + " นาทีแล้ว — เตรียมส่ง" + (done == 0 ? "" : " (เตือนรอบ 2)"), Toast.LENGTH_LONG).show();
             try {
@@ -539,7 +593,7 @@ public class OrderBubbleService extends Service {
                     orders = got;
                     rebuildChildren();
                     if (isNew) {
-                        Fx.bounce(mainBubble);
+                        Fx.bounce(mainDisc);
                         boolean anyEdit = false;
                         for (Order o : got) if (unreadIds.contains(o.id) && o.needsAck()) anyEdit = true;
                         Alert.start(OrderBubbleService.this, anyEdit ? Alert.EDIT : Alert.NEW);   // ดังจนกว่าจะกดรับ
@@ -1563,7 +1617,7 @@ public class OrderBubbleService extends Service {
         if (at > harvestShownAt) {              // สัญญาณใหม่ → เสียง + popup
             harvestShownAt = at;
             Alert.start(this, Alert.HARVEST);
-            if (mainBubble != null) Fx.bounce(mainBubble);
+            if (mainDisc != null) Fx.bounce(mainDisc);
             openHarvest();
         } else if (!harvestPanel && panel == null) {
             openHarvest();                      // ยังไม่กดรับทราบ → เปิดเตือนซ้ำ
@@ -1630,7 +1684,6 @@ public class OrderBubbleService extends Service {
         childViews.clear();
         if (mainBubble != null) { try { wm.removeView(mainBubble); } catch (Exception ignored) {} }
         if (listBubble != null) { try { wm.removeView(listBubble); } catch (Exception ignored) {} }
-        if (netDot != null) { try { wm.removeView(netDot); } catch (Exception ignored) {} }
         ui.removeCallbacks(housekeeping);
     }
 }
