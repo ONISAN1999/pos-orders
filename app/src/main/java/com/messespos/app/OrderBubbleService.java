@@ -54,6 +54,8 @@ public class OrderBubbleService extends Service {
     private final java.util.Map<String, Long> seenEdit = new java.util.HashMap<>();   // editedAt ล่าสุดที่เคยเห็น
     private View listBubble;              // ปุ่ม 📋 เล็กติดฟองแม่ → เปิดรายการ/ประวัติได้ตลอด
     private WindowManager.LayoutParams listParams;
+    private final java.util.Map<String, Integer> readyPinged = new java.util.HashMap<>();   // เตือน "ครบ 40 นาที" ไปแล้วกี่รอบ
+    private static final int READY_MIN = 40;
     private long harvestShownAt = 0;      // สัญญาณเก็บกุ้งที่เปิด popup ไปแล้ว
     private boolean harvestPanel = false; // popup เก็บกุ้งเปิดอยู่
 
@@ -384,6 +386,7 @@ public class OrderBubbleService extends Service {
     private final Runnable tick = new Runnable() {
         @Override public void run() {
             refreshClocks();
+            checkReady();
             ui.postDelayed(this, 20000);   // อัปเดตเวลาแต่ละ 20 วิ
         }
     };
@@ -391,6 +394,34 @@ public class OrderBubbleService extends Service {
     private void refreshClocks() {
         List<Order> act = activeOrders();
         for (int i = 0; i < childViews.size() && i < act.size(); i++) bindChild(childViews.get(i), act.get(i));
+    }
+
+    /** ออเดอร์ไหนรอครบ 40 นาที → เตือน 2 รอบ (ห่าง 1 นาที) ให้พนักงานเตรียมส่ง ไม่ต้องกดอะไร */
+    private void checkReady() {
+        for (Order o : orders) {
+            if (o.status.equals(Order.ST_DONE)) continue;
+            int m = o.waitedMin();
+            int done = readyPinged.containsKey(o.id) ? readyPinged.get(o.id) : 0;
+            if (m < READY_MIN || done >= 2) continue;
+            if (done == 1 && m < READY_MIN + 1) continue;   // รอบ 2 ห่างจากรอบแรก 1 นาที
+            readyPinged.put(o.id, done + 1);
+            Alert.ping(this);
+            if (mainBubble != null) Fx.bounce(mainBubble);
+            String who = (o.no.isEmpty() ? "" : "#" + o.no + " ") + o.place;
+            Toast.makeText(this, "⏰ ออเดอร์ " + who.trim() + " ครบ " + READY_MIN + " นาทีแล้ว — เตรียมส่ง" + (done == 0 ? "" : " (เตือนรอบ 2)"), Toast.LENGTH_LONG).show();
+            try {
+                NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+                NotificationChannel ch = new NotificationChannel("ready_ch", "ออเดอร์ครบ 40 นาที", NotificationManager.IMPORTANCE_HIGH);
+                nm.createNotificationChannel(ch);
+                Notification n = new Notification.Builder(this, "ready_ch")
+                        .setContentTitle("⏰ ครบ " + READY_MIN + " นาที — เตรียมส่ง " + who.trim())
+                        .setContentText("รอมาแล้ว " + m + " นาที")
+                        .setSmallIcon(android.R.drawable.ic_dialog_info)
+                        .setAutoCancel(true)
+                        .build();
+                nm.notify(5000 + Math.abs(o.id.hashCode() % 1000), n);
+            } catch (Exception ignored) {}
+        }
     }
 
     private List<Order> activeOrders() {
