@@ -1593,16 +1593,46 @@ public class OrderBubbleService extends Service {
 
     private void buildSettingsTab(LinearLayout main) {
         LinearLayout top = topBar(main, "ตั้งค่า");
+        TextView chk = lchip("🔄 ตรวจอัปเดต", 0xFFF1F2F5, TXT);
+        LinearLayout.LayoutParams ckl = lp(WRAP, WRAP); ckl.leftMargin = dp(this, 14);
+        Fx.onTap(chk, this::checkUpdateNow);
+        top.addView(chk, ckl);
         topBarEnd(top);
-        LinearLayout body = bodyOf(main);
-        LinearLayout cardV = col(this);
-        cardV.setBackground(card(16));
-        cardV.setPadding(dp(this, 22), dp(this, 16), dp(this, 22), dp(this, 16));
+        LinearLayout outerBody = bodyOf(main);
+        outerBody.setPadding(0, 0, 0, 0);
+        ScrollView sv = new ScrollView(this);
+        sv.setVerticalScrollBarEnabled(false);
+        LinearLayout body = col(this);
+        body.setPadding(dp(this, 18), dp(this, 16), dp(this, 18), dp(this, 16));
+        sv.addView(body);
+        outerBody.addView(sv, lp(MATCH, MATCH));
+
+        boolean upd = Updater.available(this);
         int done = 0; for (Order o : orders) if (o.status.equals(Order.ST_DONE)) done++;
         long age = Cloud.lastOk == 0 ? -1 : (System.currentTimeMillis() - Cloud.lastOk) / 1000;
-        boolean upd = Updater.available(this);
+
+        // ---- อัปเดตแอป (บนสุด) ----
+        LinearLayout ub = row(this);
+        ub.setBackground(upd ? glass(this, ORANGE_SOFT, 14, ORANGE) : card(14));
+        ub.setPadding(dp(this, 16), dp(this, 12), dp(this, 12), dp(this, 12));
+        LinearLayout uc = col(this);
+        uc.addView(text(this, upd ? "🆕 มีเวอร์ชันใหม่ v" + Updater.latestName + " พร้อมติดตั้ง" : "เวอร์ชัน " + ver(this) + (Updater.checkedAt > 0 ? " — ล่าสุดแล้ว" : ""), 14.5f, true, upd ? ORANGE : TXT));
+        uc.addView(text(this, upd ? (Updater.latestNotes.isEmpty() ? "ติดตั้งทับได้เลย ข้อมูล/ที่อยู่ในเครื่องไม่หาย ฟองจะกลับมาเอง" : Updater.latestNotes)
+                : "แอปตรวจจาก GitHub ทุก 6 ชม. — มีเวอร์ชันใหม่จะแจ้งเตือน + ป้าย 🆕 ที่เมนูตั้งค่า"
+                + (Updater.checkedAt > 0 ? " · ตรวจล่าสุด " + clockOf(Updater.checkedAt + Cloud.offset) : ""), 12, false, MUTED));
+        ub.addView(uc, lpw(1));
+        TextView ubtn = lbtn(upd ? "⬇️ อัปเดตตอนนี้" : "🔄 ตรวจอัปเดต", upd);
+        Fx.onTap(ubtn, () -> { if (Updater.available(this)) startUpdate(); else checkUpdateNow(); });
+        LinearLayout.LayoutParams ubl = lp(WRAP, WRAP); ubl.leftMargin = dp(this, 10);
+        ub.addView(ubtn, ubl);
+        LinearLayout.LayoutParams ubb = lp(MATCH, WRAP); ubb.bottomMargin = dp(this, 14);
+        body.addView(ub, ubb);
+
+        LinearLayout cardV = col(this);
+        cardV.setBackground(card(16));
+        cardV.setPadding(dp(this, 22), dp(this, 6), dp(this, 22), dp(this, 6));
         String[][] rows = {
-                {"เวอร์ชันแอป", ver(this) + (upd ? "  →  มีเวอร์ชันใหม่ v" + Updater.latestName : Updater.checkedAt > 0 ? "  (ล่าสุดแล้ว)" : "")},
+                {"เวอร์ชันแอป", ver(this) + (upd ? "  →  ใหม่ v" + Updater.latestName : "")},
                 {"ร้าน", Cloud.shop(this)},
                 {"ต่อคลาวด์ล่าสุด", age < 0 ? "ยังไม่เคย" : age + " วินาทีที่แล้ว"},
                 {"ออเดอร์บนคลาวด์", orders.size() + " รายการ (เสร็จแล้ว " + done + ")"},
@@ -1638,26 +1668,15 @@ public class OrderBubbleService extends Service {
         Fx.onTap(test, () -> Alert.ping(this, Alert.NEW));
         acts.addView(test, tl);
         body.addView(acts, lp(MATCH, WRAP));
+    }
 
-        // ---- อัปเดตแอป ----
-        LinearLayout ub = row(this);
-        ub.setBackground(upd ? glass(this, ORANGE_SOFT, 14, ORANGE) : card(14));
-        ub.setPadding(dp(this, 16), dp(this, 12), dp(this, 12), dp(this, 12));
-        LinearLayout uc = col(this);
-        uc.addView(text(this, upd ? "🆕 มีเวอร์ชันใหม่ v" + Updater.latestName + " พร้อมติดตั้ง" : "อัปเดตแอปอัตโนมัติจาก GitHub", 14.5f, true, upd ? ORANGE : TXT));
-        uc.addView(text(this, upd ? (Updater.latestNotes.isEmpty() ? "ติดตั้งทับได้เลย ข้อมูล/ที่อยู่ในเครื่องไม่หาย ฟองจะกลับมาเอง" : Updater.latestNotes)
-                : "แอปตรวจทุก 6 ชม. — ถ้ามีเวอร์ชันใหม่จะมีแจ้งเตือน + ป้ายที่เมนูตั้งค่า", 12, false, MUTED));
-        ub.addView(uc, lpw(1));
-        TextView ubtn = lbtn(upd ? "⬇️ อัปเดตตอนนี้" : "🔄 ตรวจอัปเดต", upd);
-        Fx.onTap(ubtn, () -> {
-            if (Updater.available(this)) { startUpdate(); return; }
-            Toast.makeText(this, "กำลังตรวจ…", Toast.LENGTH_SHORT).show();
-            Updater.check(this, (ok, msg) -> { Toast.makeText(this, msg, Toast.LENGTH_LONG).show(); if (panel != null && tab == T_SET) openWorkspace(T_SET); });
+    /** ตรวจอัปเดตทันที (กดเอง) */
+    private void checkUpdateNow() {
+        Toast.makeText(this, "🔄 กำลังตรวจเวอร์ชันล่าสุด…", Toast.LENGTH_SHORT).show();
+        Updater.check(this, (ok, msg) -> {
+            Toast.makeText(this, (ok ? "🆕 " : "") + msg, Toast.LENGTH_LONG).show();
+            if (panel != null) openWorkspace(tab);
         });
-        LinearLayout.LayoutParams ubl = lp(WRAP, WRAP); ubl.leftMargin = dp(this, 10);
-        ub.addView(ubtn, ubl);
-        LinearLayout.LayoutParams ubb = lp(MATCH, WRAP); ubb.topMargin = dp(this, 14);
-        body.addView(ub, ubb);
     }
 
     private void clearDone() {
