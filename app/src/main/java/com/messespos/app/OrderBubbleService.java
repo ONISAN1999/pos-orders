@@ -632,6 +632,7 @@ public class OrderBubbleService extends Service {
     private int addStep = 0;          // 0 เลือกที่อยู่ / 1 โน้ต
     private String addQuery = "";
     private String addPlace = "";
+    private int wsH = 0;              // ความสูงหน้าจอทำงาน (px) — ใช้คำนวณส่วนเนื้อหาแบบตายตัว กัน weight เพี้ยน
 
     private GradientDrawable card(float r) { return glass(this, CARD, r, LINE_C); }
     private GradientDrawable fill(int color, float r) { return glass(this, color, r, 0); }
@@ -708,6 +709,7 @@ public class OrderBubbleService extends Service {
         DisplayMetrics dm = getResources().getDisplayMetrics();
         int W = Math.min(dm.widthPixels - dp(this, 12), dp(this, 1180));
         int H = Math.min(dm.heightPixels - dp(this, 12), dp(this, 760));
+        wsH = H;
 
         LinearLayout root = row(this);
         root.setGravity(Gravity.TOP);
@@ -720,7 +722,7 @@ public class OrderBubbleService extends Service {
         root.addView(div, new LinearLayout.LayoutParams(dp(this, 1), MATCH));
 
         LinearLayout main = col(this);
-        root.addView(main, new LinearLayout.LayoutParams(0, MATCH, 1));
+        root.addView(main, new LinearLayout.LayoutParams(0, H, 1));
 
         switch (tab) {
             case T_ADD:  buildAddTab(main); break;
@@ -813,10 +815,15 @@ public class OrderBubbleService extends Service {
         top.addView(close, cl);
     }
 
+    private static final int FOOT_DP = 68;
+
+    /** ความสูงส่วนเนื้อหา = ทั้งหมด − แถบบน − แถบล่าง (คำนวณเป็น px ตายตัว) */
+    private int bodyH() { return Math.max(dp(this, 120), wsH - dp(this, 61) - dp(this, FOOT_DP + 1)); }
+
     private LinearLayout bodyOf(LinearLayout main) {
         LinearLayout body = col(this);
         body.setPadding(dp(this, 18), dp(this, 16), dp(this, 18), dp(this, 16));
-        main.addView(body, new LinearLayout.LayoutParams(MATCH, 0, 1));
+        main.addView(body, new LinearLayout.LayoutParams(MATCH, bodyH()));
         return body;
     }
 
@@ -825,8 +832,8 @@ public class OrderBubbleService extends Service {
         main.addView(div, lp(MATCH, dp(this, 1)));
         LinearLayout f = row(this);
         f.setBackgroundColor(CARD);
-        f.setPadding(dp(this, 18), dp(this, 10), dp(this, 18), dp(this, 10));
-        main.addView(f, lp(MATCH, WRAP));
+        f.setPadding(dp(this, 18), dp(this, 8), dp(this, 18), dp(this, 8));
+        main.addView(f, lp(MATCH, dp(this, FOOT_DP)));
         return f;
     }
 
@@ -849,15 +856,16 @@ public class OrderBubbleService extends Service {
         topBarEnd(top);
 
         LinearLayout body = bodyOf(main);
+        final int innerH = bodyH() - dp(this, 32);
         LinearLayout cols = row(this);
         cols.setGravity(Gravity.TOP);
-        body.addView(cols, new LinearLayout.LayoutParams(MATCH, 0, 1));
+        body.addView(cols, new LinearLayout.LayoutParams(MATCH, innerH));
 
         // ----- ซ้าย: รายการ -----
         LinearLayout left = col(this);
         DisplayMetrics dm = getResources().getDisplayMetrics();
         int leftW = Math.min(dp(this, 400), (int) (dm.widthPixels * 0.38f));
-        cols.addView(left, new LinearLayout.LayoutParams(leftW, MATCH));
+        cols.addView(left, new LinearLayout.LayoutParams(leftW, innerH));
 
         int filter = hist ? 1 : listFilter;
         if (!hist) {
@@ -892,7 +900,7 @@ public class OrderBubbleService extends Service {
         sv.setVerticalScrollBarEnabled(false);
         LinearLayout list = col(this);
         sv.addView(list);
-        left.addView(sv, new LinearLayout.LayoutParams(MATCH, 0, 1));
+        left.addView(sv, new LinearLayout.LayoutParams(MATCH, innerH - (hist ? 0 : dp(this, 52))));
 
         if (!Cloud.ready(this)) {
             TextView warn = text(this, "ยังไม่ได้ตั้งค่าคลาวด์ — เปิดแอป POS ออเดอร์ แล้วใส่ลิงก์ฐานข้อมูลก่อน", 13, false, ORANGE);
@@ -935,7 +943,7 @@ public class OrderBubbleService extends Service {
         LinearLayout right = col(this);
         right.setBackground(card(16));
         right.setPadding(dp(this, 20), dp(this, 16), dp(this, 20), dp(this, 16));
-        LinearLayout.LayoutParams rl = new LinearLayout.LayoutParams(0, MATCH, 1); rl.leftMargin = dp(this, 16);
+        LinearLayout.LayoutParams rl = new LinearLayout.LayoutParams(0, innerH, 1); rl.leftMargin = dp(this, 16);
         cols.addView(right, rl);
         if (sel == null) {
             TextView em = text(this, "เลือกออเดอร์จากรายการด้านซ้าย", 15, false, MUTED);
@@ -1262,7 +1270,7 @@ public class OrderBubbleService extends Service {
         ScrollView sv = new ScrollView(this);
         sv.setVerticalScrollBarEnabled(false);
         sv.addView(listBox);
-        LinearLayout.LayoutParams svl = new LinearLayout.LayoutParams(MATCH, 0, 1); svl.topMargin = dp(this, 12);
+        LinearLayout.LayoutParams svl = new LinearLayout.LayoutParams(MATCH, bodyH() - dp(this, 32 + 52 + 12)); svl.topMargin = dp(this, 12);
         body.addView(sv, svl);
 
         DisplayMetrics dm = getResources().getDisplayMetrics();
@@ -1366,7 +1374,7 @@ public class OrderBubbleService extends Service {
             @Override public void onTextChanged(CharSequence c, int a, int b, int d) { refresh.run(); }
             @Override public void afterTextChanged(android.text.Editable e) {}
         });
-        refresh.run();
+        try { refresh.run(); } catch (Exception ex) { Toast.makeText(this, "โหลดรายการที่อยู่ไม่ได้: " + ex, Toast.LENGTH_LONG).show(); }
 
         LinearLayout f = footerOf(main);
         TextView cancel = lbtn("✕ ยกเลิก", false);
@@ -1375,7 +1383,6 @@ public class OrderBubbleService extends Service {
         View sp = new View(this); f.addView(sp, lpw(1));
         TextView tip = text(this, "แตะการ์ดที่อยู่ → ใส่โน้ต → ยืนยัน ระบบจับเวลาให้ทันที", 12.5f, false, MUTED);
         f.addView(tip);
-        showIme(search);
     }
 
     /** ขั้นพิเศษ: พิมพ์ที่อยู่ใหม่ (ช่องใหญ่ชัดเจน) → ถัดไปใส่โน้ต */
