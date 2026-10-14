@@ -1,1 +1,1 @@
-{"versionCode":21,"versionName":"3.7","build":64,"apk":"https://raw.githubusercontent.com/ONISAN1999/pos-orders/main/dist/POSOrders.apk","notes":"หน้ารายละเอียด: ยอดรวม 1 บรรทัดตัวใหญ่ + ช่องทางชำระ 1 บรรทัดตัวใหญ่ (เขียว = ชำระแล้ว / เหลือง = ยังไม่ชำระ) ","at":"2026-10-14T15:30:10Z"}
+{"versionCode":22,"versionName":"3.8","build":66,"apk":"https://raw.githubusercontent.com/ONISAN1999/pos-orders/main/dist/POSOrders.apk","notes":"หน้ารายละเอียดแบบ ใบสั่งครัว: หัวดำ จำนวนกล่องส้มใหญ่ เส้นประ รวม/ชำระ 2 กล่องใหญ่ ","at":"2026-10-14T16:38:44Z"}
