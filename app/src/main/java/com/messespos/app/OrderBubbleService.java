@@ -1237,6 +1237,7 @@ public class OrderBubbleService extends Service {
 
     private void buildAddTab(LinearLayout main) {
         if (addStep == 1) { buildAddNote(main); return; }
+        if (addStep == 2) { buildAddNew(main); return; }
         LinearLayout top = topBar(main, "คีย์ออเดอร์หน้าเครื่อง");
         TextView p1 = lchip("ขั้น 1/2 · เลือกที่อยู่", 0xFFF1F2F5, TXT);
         LinearLayout.LayoutParams l1 = lp(WRAP, WRAP); l1.leftMargin = dp(this, 14);
@@ -1244,10 +1245,18 @@ public class OrderBubbleService extends Service {
         topBarEnd(top);
 
         LinearLayout body = bodyOf(main);
-        final android.widget.EditText search = linput("🔍  ค้นหา / พิมพ์ที่อยู่ใหม่");
+        LinearLayout srow = row(this);
+        final android.widget.EditText search = linput("🔍  ค้นหาที่อยู่ที่เคยใช้ หรือพิมพ์ที่อยู่ใหม่ตรงนี้");
+        search.setSingleLine(true);
+        search.setMinHeight(dp(this, 52));
         search.setText(addQuery);
         search.setSelection(addQuery.length());
-        body.addView(search, lp(MATCH, WRAP));
+        srow.addView(search, lpw(1));
+        TextView newBtn = lbtn("➕ พิมพ์ที่อยู่ใหม่", true);
+        LinearLayout.LayoutParams nbl = lp(WRAP, WRAP); nbl.leftMargin = dp(this, 10);
+        Fx.onTap(newBtn, () -> { addStep = 2; addQuery = search.getText().toString().trim(); openWorkspace(T_ADD); });
+        srow.addView(newBtn, nbl);
+        body.addView(srow, lp(MATCH, WRAP));
 
         final LinearLayout listBox = col(this);
         ScrollView sv = new ScrollView(this);
@@ -1321,10 +1330,10 @@ public class OrderBubbleService extends Service {
                     cardV.setGravity(Gravity.CENTER);
                     TextView n = text(this, "＋ เพิ่มที่อยู่ใหม่", 16, true, ORANGE); n.setGravity(Gravity.CENTER);
                     cardV.addView(n);
-                    TextView s2 = text(this, "พิมพ์ในช่องค้นหา", 12, false, MUTED); s2.setGravity(Gravity.CENTER);
+                    TextView s2 = text(this, "แตะเพื่อพิมพ์ที่อยู่", 12, false, MUTED); s2.setGravity(Gravity.CENTER);
                     s2.setPadding(0, dp(this, 4), 0, 0);
                     cardV.addView(s2);
-                    Fx.onTap(cardV, () -> { search.requestFocus(); showIme(search); });
+                    Fx.onTap(cardV, () -> { addStep = 2; addQuery = ""; openWorkspace(T_ADD); });
                 } else {
                     final String p = items.get(i - (addNew ? 1 : 0));
                     cardV.setBackground(card(14));
@@ -1366,6 +1375,50 @@ public class OrderBubbleService extends Service {
         View sp = new View(this); f.addView(sp, lpw(1));
         TextView tip = text(this, "แตะการ์ดที่อยู่ → ใส่โน้ต → ยืนยัน ระบบจับเวลาให้ทันที", 12.5f, false, MUTED);
         f.addView(tip);
+        showIme(search);
+    }
+
+    /** ขั้นพิเศษ: พิมพ์ที่อยู่ใหม่ (ช่องใหญ่ชัดเจน) → ถัดไปใส่โน้ต */
+    private void buildAddNew(LinearLayout main) {
+        LinearLayout top = topBar(main, "คีย์ออเดอร์หน้าเครื่อง");
+        TextView p1 = lchip("เพิ่มที่อยู่ใหม่", ORANGE_SOFT, ORANGE);
+        LinearLayout.LayoutParams l1 = lp(WRAP, WRAP); l1.leftMargin = dp(this, 14);
+        top.addView(p1, l1);
+        topBarEnd(top);
+
+        LinearLayout body = bodyOf(main);
+        LinearLayout cardV = col(this);
+        cardV.setBackground(card(16));
+        cardV.setPadding(dp(this, 22), dp(this, 20), dp(this, 22), dp(this, 20));
+        cardV.addView(text(this, "พิมพ์ชื่อที่อยู่ / จุดส่ง (เช่น ชื่อคอนโด หมู่บ้าน ซอย หรือชื่อลูกค้า)", 13, false, MUTED));
+        final android.widget.EditText in = linput("📍 เช่น Gencondo ตึก B / หอพักสีฟ้า ซ.5 / คุณแดง");
+        in.setTextSize(22);
+        in.setSingleLine(true);
+        in.setMinHeight(dp(this, 60));
+        in.setText(addQuery);
+        in.setSelection(addQuery.length());
+        LinearLayout.LayoutParams il = lp(MATCH, WRAP); il.topMargin = dp(this, 8);
+        cardV.addView(in, il);
+        TextView tip = text(this, "ที่อยู่นี้จะถูกจำไว้ ครั้งต่อไปจะขึ้นเป็นการ์ดให้แตะได้เลย", 12.5f, false, MUTED);
+        tip.setPadding(0, dp(this, 10), 0, 0);
+        cardV.addView(tip);
+        body.addView(cardV, lp(MATCH, WRAP));
+
+        LinearLayout f = footerOf(main);
+        TextView back = lbtn("‹ กลับ", false);
+        Fx.onTap(back, () -> openAddLocal(""));
+        f.addView(back);
+        View sp = new View(this); f.addView(sp, lpw(1));
+        TextView go = lbtn("ถัดไป › ใส่โน้ต", true);
+        go.setTextSize(17);
+        Fx.onTap(go, () -> {
+            String v = in.getText().toString().trim();
+            if (v.isEmpty()) { Toast.makeText(this, "พิมพ์ที่อยู่ก่อน", Toast.LENGTH_SHORT).show(); showIme(in); return; }
+            openAddNote(v);
+        });
+        f.addView(go);
+        in.setOnEditorActionListener((tv, a, ev) -> { go.performClick(); return true; });
+        showIme(in);
     }
 
     private String relDay(long t) {
