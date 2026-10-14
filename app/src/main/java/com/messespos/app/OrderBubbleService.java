@@ -87,10 +87,35 @@ public class OrderBubbleService extends Service {
         ui.post(tick);
         ui.postDelayed(housekeeping, 60000);
         ui.post(poll);
+        ui.postDelayed(updateCheck, 20000);
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
+        if (intent != null && "update".equals(intent.getStringExtra("act"))) startUpdate();
         return START_STICKY;
+    }
+
+    /* ================= อัปเดตแอปอัตโนมัติจาก GitHub ================= */
+    private int updateNotified = 0;
+    private final Runnable updateCheck = new Runnable() {
+        @Override public void run() {
+            Updater.check(OrderBubbleService.this, (ok, msg) -> {
+                if (ok && Updater.latestCode != updateNotified) {
+                    updateNotified = Updater.latestCode;
+                    Updater.notify(OrderBubbleService.this, OrderBubbleService.class);
+                    Toast.makeText(OrderBubbleService.this, "🆕 " + msg + " — เปิด ตั้งค่า เพื่ออัปเดต", Toast.LENGTH_LONG).show();
+                    if (panel != null) openWorkspace(tab);
+                }
+            });
+            ui.postDelayed(this, 6 * 3600000L);   // ตรวจทุก 6 ชม.
+        }
+    };
+
+    private void startUpdate() {
+        Toast.makeText(this, "⬇️ กำลังโหลดเวอร์ชันใหม่…", Toast.LENGTH_SHORT).show();
+        Runnable go = () -> Updater.install(this, (ok, msg) -> Toast.makeText(this, (ok ? "✅ " : "⚠️ ") + msg, Toast.LENGTH_LONG).show());
+        if (Updater.latestApk.isEmpty()) Updater.check(this, (ok, msg) -> { if (ok) go.run(); else Toast.makeText(this, msg, Toast.LENGTH_LONG).show(); });
+        else go.run();
     }
 
     private void startForegroundNotif() {
@@ -756,9 +781,9 @@ public class OrderBubbleService extends Service {
             lb.setPadding(0, dp(this, 3), 0, 0);
             it.addView(lb);
             // ป้ายจำนวนยังไม่อ่าน / สัญญาณเก็บกุ้งค้าง
-            int badge = id == T_ORDERS ? unreadIds.size() : id == T_HARV && Cloud.harvestAt > 0 && Cloud.harvestAck < Cloud.harvestAt ? 1 : 0;
+            int badge = id == T_ORDERS ? unreadIds.size() : id == T_HARV && Cloud.harvestAt > 0 && Cloud.harvestAck < Cloud.harvestAt ? 1 : id == T_SET && Updater.available(this) ? 1 : 0;
             if (badge > 0) {
-                TextView bd = text(this, id == T_HARV ? "!" : String.valueOf(badge), 10, true, WHITE);
+                TextView bd = text(this, id == T_ORDERS ? String.valueOf(badge) : id == T_SET ? "🆕" : "!", 10, true, WHITE);
                 bd.setGravity(Gravity.CENTER);
                 bd.setBackground(fill(RED_C, 999));
                 bd.setPadding(dp(this, 6), dp(this, 1), dp(this, 6), dp(this, 1));
@@ -796,6 +821,12 @@ public class OrderBubbleService extends Service {
     private void topBarEnd(LinearLayout top) {
         View sp = new View(this);
         top.addView(sp, lpw(1));
+        if (Updater.available(this) && tab != T_SET) {
+            TextView up = lchip("🆕 v" + Updater.latestName, ORANGE_SOFT, ORANGE);
+            LinearLayout.LayoutParams ul = lp(WRAP, WRAP); ul.rightMargin = dp(this, 10);
+            Fx.onTap(up, () -> openWorkspace(T_SET));
+            top.addView(up, ul);
+        }
         long age = Cloud.lastOk == 0 ? Long.MAX_VALUE : System.currentTimeMillis() - Cloud.lastOk;
         int dotc = age < 20000 ? 0xFF22C55E : age < 60000 ? 0xFFFACC15 : RED_C;
         TextView dot = text(this, "", 1, false, 0);
@@ -1569,8 +1600,9 @@ public class OrderBubbleService extends Service {
         cardV.setPadding(dp(this, 22), dp(this, 16), dp(this, 22), dp(this, 16));
         int done = 0; for (Order o : orders) if (o.status.equals(Order.ST_DONE)) done++;
         long age = Cloud.lastOk == 0 ? -1 : (System.currentTimeMillis() - Cloud.lastOk) / 1000;
+        boolean upd = Updater.available(this);
         String[][] rows = {
-                {"เวอร์ชันแอป", ver(this)},
+                {"เวอร์ชันแอป", ver(this) + (upd ? "  →  มีเวอร์ชันใหม่ v" + Updater.latestName : Updater.checkedAt > 0 ? "  (ล่าสุดแล้ว)" : "")},
                 {"ร้าน", Cloud.shop(this)},
                 {"ต่อคลาวด์ล่าสุด", age < 0 ? "ยังไม่เคย" : age + " วินาทีที่แล้ว"},
                 {"ออเดอร์บนคลาวด์", orders.size() + " รายการ (เสร็จแล้ว " + done + ")"},
@@ -1606,6 +1638,26 @@ public class OrderBubbleService extends Service {
         Fx.onTap(test, () -> Alert.ping(this, Alert.NEW));
         acts.addView(test, tl);
         body.addView(acts, lp(MATCH, WRAP));
+
+        // ---- อัปเดตแอป ----
+        LinearLayout ub = row(this);
+        ub.setBackground(upd ? glass(this, ORANGE_SOFT, 14, ORANGE) : card(14));
+        ub.setPadding(dp(this, 16), dp(this, 12), dp(this, 12), dp(this, 12));
+        LinearLayout uc = col(this);
+        uc.addView(text(this, upd ? "🆕 มีเวอร์ชันใหม่ v" + Updater.latestName + " พร้อมติดตั้ง" : "อัปเดตแอปอัตโนมัติจาก GitHub", 14.5f, true, upd ? ORANGE : TXT));
+        uc.addView(text(this, upd ? (Updater.latestNotes.isEmpty() ? "ติดตั้งทับได้เลย ข้อมูล/ที่อยู่ในเครื่องไม่หาย ฟองจะกลับมาเอง" : Updater.latestNotes)
+                : "แอปตรวจทุก 6 ชม. — ถ้ามีเวอร์ชันใหม่จะมีแจ้งเตือน + ป้ายที่เมนูตั้งค่า", 12, false, MUTED));
+        ub.addView(uc, lpw(1));
+        TextView ubtn = lbtn(upd ? "⬇️ อัปเดตตอนนี้" : "🔄 ตรวจอัปเดต", upd);
+        Fx.onTap(ubtn, () -> {
+            if (Updater.available(this)) { startUpdate(); return; }
+            Toast.makeText(this, "กำลังตรวจ…", Toast.LENGTH_SHORT).show();
+            Updater.check(this, (ok, msg) -> { Toast.makeText(this, msg, Toast.LENGTH_LONG).show(); if (panel != null && tab == T_SET) openWorkspace(T_SET); });
+        });
+        LinearLayout.LayoutParams ubl = lp(WRAP, WRAP); ubl.leftMargin = dp(this, 10);
+        ub.addView(ubtn, ubl);
+        LinearLayout.LayoutParams ubb = lp(MATCH, WRAP); ubb.topMargin = dp(this, 14);
+        body.addView(ub, ubb);
     }
 
     private void clearDone() {
@@ -1745,5 +1797,6 @@ public class OrderBubbleService extends Service {
         if (mainBubble != null) { try { wm.removeView(mainBubble); } catch (Exception ignored) {} }
         if (listBubble != null) { try { wm.removeView(listBubble); } catch (Exception ignored) {} }
         ui.removeCallbacks(housekeeping);
+        ui.removeCallbacks(updateCheck);
     }
 }
