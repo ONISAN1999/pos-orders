@@ -37,17 +37,17 @@ jobs:
       - name: Restore signing keystore
         run: base64 -d app/pos.keystore.b64 > app/pos.keystore
 
-      - name: Build debug APK
-        run: gradle assembleDebug --no-daemon
+      - name: Build release APK
+        run: gradle assembleRelease --no-daemon
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk POSOrders.apk
+        run: cp app/build/outputs/apk/release/app-release.apk POSOrders.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: pos-orders-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
 
       - name: Publish release (direct APK link)
@@ -63,7 +63,7 @@ jobs:
           cp POSOrders.apk dist/POSOrders.apk
           VC=$(grep -oP 'versionCode\s+\K\d+' app/build.gradle)
           VN=$(grep -oP 'versionName\s+"\K[^"]+' app/build.gradle)
-          NOTES=$(cat dist/notes.txt 2>/dev/null | head -c 300 | tr '\n' ' ' | sed 's/"/\\"/g')
+          NOTES=$(python3 -c "import json,sys; t=open('dist/notes.txt',encoding='utf-8').read() if __import__('os').path.exists('dist/notes.txt') else ''; print(json.dumps(t.replace(chr(10),' ').strip()[:160], ensure_ascii=False)[1:-1])")
           printf '{"versionCode":%s,"versionName":"%s","build":%s,"apk":"https://raw.githubusercontent.com/ONISAN1999/pos-orders/main/dist/POSOrders.apk","notes":"%s","at":"%s"}\n' "$VC" "$VN" "${{ github.run_number }}" "$NOTES" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > dist/version.json
           cat dist/version.json
           git config user.name "github-actions"
