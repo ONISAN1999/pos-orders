@@ -23,17 +23,17 @@ public class MainActivity extends Activity {
         super.onCreate(b);
 
         ScrollView sv = new ScrollView(this);
-        sv.setBackgroundColor(INK);
+        sv.setBackgroundColor(PANEL_BG);
         sv.setFillViewport(true);
 
         LinearLayout root = col(this);
         root.setPadding(dp(this, 20), dp(this, 30), dp(this, 20), dp(this, 30));
 
-        TextView h1 = text(this, "🧾 POS ออเดอร์  " + ver(this), 24, true, WHITE);
+        TextView h1 = text(this, "🧾 POS ออเดอร์  " + ver(this), 24, true, TXT);
         h1.setGravity(Gravity.CENTER);
         root.addView(h1);
 
-        TextView sub = text(this, "ออเดอร์เด้งเป็นฟองลอยบนเครื่อง POS พร้อมจับเวลา", 13, false, WHITE_DIM);
+        TextView sub = text(this, "สำหรับพนักงานหน้าร้าน — ออเดอร์จากมือถือเด้งเป็นฟองลอยบนเครื่อง POS พร้อมจับเวลา", 13, false, WHITE_DIM);
         sub.setGravity(Gravity.CENTER);
         sub.setPadding(0, dp(this, 4), 0, dp(this, 20));
         root.addView(sub);
@@ -52,12 +52,12 @@ public class MainActivity extends Activity {
         root.addView(stop, stLp);
 
         TextView note = text(this,
-                "ครั้งแรกต้องกดอนุญาด \"แสดงทับแอปอื่น\" (Display over other apps) แล้วกดเปิดอีกครั้ง",
-                12, false, 0xFFFFE6B8);
+                "ครั้งแรกต้องกดอนุญาต \"แสดงทับแอปอื่น\" (Display over other apps) และ \"การแจ้งเตือน\" แล้วกดเปิดอีกครั้ง",
+                12, false, 0xFFB45309);
         note.setPadding(0, dp(this, 12), 0, dp(this, 22));
         root.addView(note);
 
-        root.addView(text(this, "เชื่อมกับมือถือ", 16, true, WHITE));
+        root.addView(text(this, "เชื่อมกับมือถือ", 16, true, TXT));
         TextView cnote = text(this,
                 "ใส่ลิงก์ Realtime Database ของ Firebase (ลงท้าย .firebasedatabase.app หรือ .firebaseio.com) "
                         + "แล้วใส่รหัสร้านให้ตรงกับที่ตั้งไว้ในแอปมือถือ",
@@ -90,19 +90,23 @@ public class MainActivity extends Activity {
         Fx.onTap(demo, this::pushDemo);
         root.addView(demo, dLp);
 
-        TextView guide = text(this,
-                "วิธีตั้ง Firebase (ทำครั้งเดียว)\n"
-                        + "1. เข้า console.firebase.google.com → สร้างโปรเจกต์\n"
-                        + "2. เมนู Build → Realtime Database → Create Database\n"
-                        + "3. เลือก Singapore (asia-southeast1) → Start in test mode\n"
-                        + "4. ก๊อปลิงก์ที่ขึ้นต้น https:// มาใส่ช่องด้านบน ทั้งเครื่อง POS และมือถือ",
-                12, false, 0xFFBFD4FF);
+        TextView guide = text(this, "ลิงก์ฐานข้อมูลและรหัสร้านฝังมากับแอปแล้ว ปกติไม่ต้องแก้ — ปุ่ม \"ออเดอร์ทดสอบ\" จะไปโผล่บนเครื่อง POS และมือถือจริง ใช้เฉพาะตอนทดสอบ",
+                12, false, TXT_2);
         guide.setPadding(0, dp(this, 24), 0, 0);
         guide.setLineSpacing(dp(this, 4), 1f);
         root.addView(guide);
 
         sv.addView(root);
         setContentView(sv);
+
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED)
+            requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 11);
+    }
+
+    @Override public void onRequestPermissionsResult(int req, String[] perms, int[] res) {
+        super.onRequestPermissionsResult(req, perms, res);
+        if (req == 11 && res.length > 0 && res[0] != android.content.pm.PackageManager.PERMISSION_GRANTED)
+            Toast.makeText(this, "ยังไม่ได้อนุญาตการแจ้งเตือน — แจ้งเตือนครบ 40 นาที/อัปเดตแอป จะไม่ขึ้น (เปิดได้ที่ ตั้งค่า > แอป > POS ออเดอร์ > การแจ้งเตือน)", Toast.LENGTH_LONG).show();
     }
 
     private EditText addField(LinearLayout parent, String label, String value) {

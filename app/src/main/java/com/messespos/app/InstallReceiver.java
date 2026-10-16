@@ -26,7 +26,7 @@ public class InstallReceiver extends BroadcastReceiver {
                 NotificationManager nm = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
                 NotificationChannel ch = new NotificationChannel("app_update", "อัปเดตแอป", NotificationManager.IMPORTANCE_HIGH);
                 nm.createNotificationChannel(ch);
-                int fl = PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= 31 ? PendingIntent.FLAG_MUTABLE : 0);
+                int fl = PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= 23 ? PendingIntent.FLAG_IMMUTABLE : 0);
                 PendingIntent pi = PendingIntent.getActivity(c, 7003, confirm, fl);
                 Notification n = new Notification.Builder(c, "app_update")
                         .setContentTitle("ยืนยันการอัปเดต v" + Updater.latestName)

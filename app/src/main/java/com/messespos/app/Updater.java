@@ -81,6 +81,16 @@ public class Updater {
     public static void install(final Context c, final CB cb) {
         if (busy) { if (cb != null) cb.done(false, "กำลังอัปเดตอยู่แล้ว…"); return; }
         if (latestApk.isEmpty()) { if (cb != null) cb.done(false, "ยังไม่ได้ตรวจเวอร์ชัน"); return; }
+        // ครั้งแรก Android ต้องให้สิทธิ์ "ติดตั้งแอปจากแหล่งนี้" ก่อน → พาไปหน้าอนุญาตพร้อมคำอธิบาย
+        if (Build.VERSION.SDK_INT >= 26 && !c.getPackageManager().canRequestPackageInstalls()) {
+            try {
+                Intent i = new Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, android.net.Uri.parse("package:" + c.getPackageName()));
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                c.startActivity(i);
+            } catch (Exception ignored) {}
+            if (cb != null) cb.done(false, "กด \"อนุญาต\" ให้แอปติดตั้งอัปเดตได้ (ทำครั้งเดียว) แล้วกดอัปเดตอีกครั้ง");
+            return;
+        }
         busy = true; progress = 0;
         new Thread(() -> {
             try {

@@ -12,14 +12,19 @@ import android.widget.TextView;
 /** สร้าง UI ด้วยโค้ด (ไม่ใช้ไฟล์ XML) — สไตล์ Vibrancy/กระจก */
 public class UI {
 
-    public static final int INK        = 0xFF0F1220;
+    /* ---- ธีมสว่าง (ชุดเดียวกับ Messes Sale) ---- */
+    public static final int INK        = 0xFF1F2430;   // ตัวหนังสือหลัก
+    public static final int TXT        = 0xFF1F2430;
+    public static final int TXT_2      = 0xFF6B7280;   // ตัวหนังสือรอง
     public static final int WHITE      = 0xFFFFFFFF;
-    public static final int WHITE_DIM  = 0xCCFFFFFF;
-    public static final int GLASS      = 0x26FFFFFF;
-    public static final int GLASS_SOFT = 0x1AFFFFFF;
-    public static final int STROKE     = 0x59FFFFFF;
-    public static final int PANEL_BG   = 0xF21E2134;
-    public static final int OK_GREEN   = 0xFFC9FFE0;
+    public static final int WHITE_DIM  = 0xFF6B7280;   // (ชื่อเดิม) ตัวหนังสือรอง
+    public static final int GLASS      = 0xFFF1F2F5;
+    public static final int GLASS_SOFT = 0xFFF7F8FA;
+    public static final int STROKE     = 0xFFDFE2E8;
+    public static final int PANEL_BG   = 0xFFF4F5F7;
+    public static final int OK_GREEN   = 0xFF139A4B;
+    public static final int ACCENT     = 0xFFF05A28;
+    public static final int ACCENT_SOFT= 0xFFFFF1E8;
 
     public static int dp(Context c, float v) {
         return (int) (v * c.getResources().getDisplayMetrics().density);
@@ -60,7 +65,7 @@ public class UI {
     /** ปุ่มไล่สีชมพู-ส้ม */
     public static GradientDrawable primary(Context c, float radius) {
         GradientDrawable g = new GradientDrawable(
-                GradientDrawable.Orientation.TL_BR, new int[]{0xFFFF7A9A, 0xFFFF9D6C});
+                GradientDrawable.Orientation.TL_BR, new int[]{0xFFF05A28, 0xFFFF8A3D});
         g.setCornerRadius(dp(c, radius));
         return g;
     }
@@ -102,10 +107,10 @@ public class UI {
 
     /** ปุ่มกลม/แคปซูล กดได้ */
     public static TextView chip(Context c, String label, boolean selected) {
-        TextView t = text(c, label, 12.5f, true, selected ? INK : WHITE);
+        TextView t = text(c, label, 12.5f, true, selected ? ACCENT : TXT);
         t.setGravity(Gravity.CENTER);
         t.setPadding(dp(c, 14), dp(c, 8), dp(c, 14), dp(c, 8));
-        t.setBackground(selected ? glass(c, WHITE, 13, 0) : glass(c, GLASS, 13, STROKE));
+        t.setBackground(selected ? glass(c, ACCENT_SOFT, 13, ACCENT) : glass(c, WHITE, 13, STROKE));
         return t;
     }
 
@@ -114,14 +119,24 @@ public class UI {
         t.setGravity(Gravity.CENTER);
         t.setPadding(dp(c, 14), dp(c, 13), dp(c, 14), dp(c, 13));
         t.setBackground(bg);
+        t.setMinHeight(dp(c, 48));
+        // พื้นสว่าง/โปร่ง → ใช้ตัวหนังสือเข้มอัตโนมัติ (กันตัวขาวบนพื้นขาว)
+        try {
+            android.content.res.ColorStateList cs = bg.getColor();
+            if (cs != null) {
+                int col = cs.getDefaultColor();
+                double lum = 0.299 * Color.red(col) + 0.587 * Color.green(col) + 0.114 * Color.blue(col);
+                if (Color.alpha(col) < 120 || lum > 170) t.setTextColor(0xFF1F2430);
+            }
+        } catch (Exception ignored) {}
         return t;
     }
 
     public static EditText input(Context c, String hint) {
         EditText e = new EditText(c);
         e.setHint(hint);
-        e.setHintTextColor(0x80FFFFFF);
-        e.setTextColor(WHITE);
+        e.setHintTextColor(0xFF9AA1AE);
+        e.setTextColor(TXT);
         e.setTextSize(14);
         e.setBackground(glass(c, GLASS_SOFT, 12, STROKE));
         e.setPadding(dp(c, 12), dp(c, 11), dp(c, 12), dp(c, 11));
