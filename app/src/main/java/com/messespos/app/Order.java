@@ -12,6 +12,8 @@ public class Order {
     public static final String ST_NEW  = "ใหม่";
     public static final String ST_DOING = "กำลังทำ";
     public static final String ST_DONE  = "เสร็จ";
+    public static final String ST_PRE   = "พรี";       // สั่งล่วงหน้า ยังไม่ถึงเวลาเตรียม
+    public static final String ST_CANCEL = "ยกเลิก";
 
     public String id = "";
     public String no = "";          // เลขออเดอร์ เช่น "3"
@@ -25,6 +27,20 @@ public class Order {
     public long createdAt = System.currentTimeMillis();
     public long editedAt = 0, ackEditAt = 0;   // แก้ไขจากมือถือ / POS กดรับทราบแล้ว
     public List<String> prevLines = new ArrayList<>();   // รายการก่อนแก้ (ไว้ไฮไลต์ส่วนที่เปลี่ยน)
+    public long preAt = 0;          // เวลานัด (พรีออเดอร์) 0 = ไม่ใช่
+    public String preType = "";     // รับเอง / ส่ง
+    public int deposit = 0;
+    public boolean paidFull = false;
+    public int prepMin = 45;        // เริ่มเตรียมก่อนนัดกี่นาที
+
+    public boolean isPre() { return status.equals(ST_PRE); }
+    public boolean isClosed() { return status.equals(ST_DONE) || status.equals(ST_CANCEL); }
+    /** เลยเวลานัดแล้วยังไม่เสร็จ */
+    public boolean preLate() { return preAt > 0 && !isClosed() && Cloud.now() > preAt; }
+    public String preClock() {
+        if (preAt <= 0) return "";
+        return new java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(new java.util.Date(preAt - Cloud.offset));
+    }
 
     /** ถูกแก้ไขจากมือถือ และยังไม่ได้กดรับทราบ */
     public boolean needsAck() { return editedAt > 0 && ackEditAt < editedAt; }
@@ -38,7 +54,9 @@ public class Order {
     /** สีตามเวลา: <30 เขียว, 30-39 เหลือง, 40-49 ส้ม, 50-59 แดง, 60+ แดงเข้ม */
     public int tierColor() {
         int m = waitedMin();
-        if (status.equals(ST_DONE)) return 0xFF6B7280;
+        if (isClosed()) return 0xFF6B7280;
+        if (isPre()) return 0xFF7C3AED;
+        if (preLate()) return 0xFFEF4444;
         if (m >= 60) return 0xFFB91C1C;
         if (m >= 50) return 0xFFEF4444;
         if (m >= 40) return 0xFFF97316;
@@ -74,6 +92,11 @@ public class Order {
         r.createdAt = o.optLong("createdAt", Cloud.now());
         r.editedAt = o.optLong("editedAt", 0);
         r.ackEditAt = o.optLong("ackEditAt", 0);
+        r.preAt = o.optLong("preAt", 0);
+        r.preType = o.optString("preType", "");
+        r.deposit = o.optInt("deposit", 0);
+        r.paidFull = o.optBoolean("paidFull", false);
+        r.prepMin = o.optInt("prepMin", 45);
         JSONArray pv = o.optJSONArray("prevLines");
         if (pv != null) for (int i = 0; i < pv.length(); i++) r.prevLines.add(pv.optString(i));
         JSONArray a = o.optJSONArray("lines");
@@ -94,6 +117,7 @@ public class Order {
             o.put("status", status);
             if (!by.isEmpty()) o.put("by", by);
             o.put("createdAt", createdAt);
+            if (preAt > 0) { o.put("preAt", preAt); o.put("preType", preType); o.put("deposit", deposit); o.put("paidFull", paidFull); o.put("prepMin", prepMin); }
             JSONArray a = new JSONArray();
             for (String s : lines) a.put(s);
             o.put("lines", a);

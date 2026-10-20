@@ -102,6 +102,22 @@ public class Cloud {
         http(base(c) + "/" + id + ".json", "PATCH", o.toString());
     }
 
+    /** ถึงเวลาเตรียมพรีออเดอร์ → เข้าคิวปกติ เริ่มนับเวลาใหม่ตั้งแต่ตอนนี้ */
+    public static void activatePre(Context c, String id, String status) throws Exception {
+        JSONObject o = new JSONObject();
+        o.put("status", status);
+        o.put("createdAt", new JSONObject().put(".sv", "timestamp"));
+        o.put("preStartedAt", new JSONObject().put(".sv", "timestamp"));
+        http(base(c) + "/" + id + ".json", "PATCH", o.toString());
+    }
+
+    /** เลื่อนเวลานัดพรีออเดอร์ */
+    public static void setPreAt(Context c, String id, long preAt) throws Exception {
+        JSONObject o = new JSONObject();
+        o.put("preAt", preAt);
+        http(base(c) + "/" + id + ".json", "PATCH", o.toString());
+    }
+
     /** POS กดรับทราบการแก้ไข */
     public static void ackEdit(Context c, String id) throws Exception {
         JSONObject o = new JSONObject();

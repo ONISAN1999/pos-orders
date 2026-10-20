@@ -337,7 +337,7 @@ public class OrderBubbleService extends Service {
     private String childSig = "";
     private void rebuildChildren() {
         StringBuilder sig = new StringBuilder();
-        for (Order o : orders) if (!o.status.equals(Order.ST_DONE)) sig.append(o.id).append('|');
+        for (Order o : orders) if (!o.isClosed() && !o.isPre()) sig.append(o.id).append('|');
         if (sig.toString().equals(childSig) && childViews.size() == activeOrders().size()) { refreshClocks(); refreshMain(); return; }
         childSig = sig.toString();
         for (View v : childViews) { stopPulse(v); try { wm.removeView(v); } catch (Exception ignored) {} }
@@ -347,7 +347,7 @@ public class OrderBubbleService extends Service {
         int win = dp(this, CHILD_WIN);
         int s = dp(this, CHILD_DP);
         for (Order o : orders) {
-            if (o.status.equals(Order.ST_DONE)) continue;
+            if (o.isClosed() || o.isPre()) continue;
 
             // หน้าต่างนอก (โปร่ง) → วงกลมข้างใน (เต้นได้โดยไม่โดนตัดขอบ)
             android.widget.FrameLayout outer = new android.widget.FrameLayout(this);
@@ -567,6 +567,7 @@ public class OrderBubbleService extends Service {
         @Override public void run() {
             refreshClocks();
             checkReady();
+            checkPreActivation();
             refreshNetDot();
             ui.postDelayed(this, 20000);   // อัปเดตเวลาแต่ละ 20 วิ
         }
@@ -580,7 +581,7 @@ public class OrderBubbleService extends Service {
     /** ออเดอร์ไหนรอครบ 40 นาที → เตือน 2 รอบ (ห่าง 1 นาที) ให้พนักงานเตรียมส่ง ไม่ต้องกดอะไร */
     private void checkReady() {
         for (Order o : orders) {
-            if (o.status.equals(Order.ST_DONE)) continue;
+            if (o.isClosed() || o.isPre()) continue;
             int m = o.waitedMin();
             int done = readyPinged.containsKey(o.id) ? readyPinged.get(o.id) : 0;
             if (m < READY_MIN || done >= 2) continue;
@@ -607,7 +608,7 @@ public class OrderBubbleService extends Service {
 
     private List<Order> activeOrders() {
         List<Order> a = new ArrayList<>();
-        for (Order o : orders) if (!o.status.equals(Order.ST_DONE)) a.add(o);
+        for (Order o : orders) if (!o.isClosed() && !o.isPre()) a.add(o);
         return a;
     }
 
@@ -636,7 +637,7 @@ public class OrderBubbleService extends Service {
                             seenEdit.put(o.id, o.editedAt);
                             if (!firstSight && o.needsAck()) { unreadIds.add(o.id); isNew = true; }
                         }
-                        if (o.status.equals(Order.ST_DONE)) { unreadIds.remove(o.id); continue; }
+                        if (o.isClosed() || o.isPre()) { unreadIds.remove(o.id); if (o.isPre()) { seenIds.add(o.id); seenEdit.put(o.id, o.editedAt); } continue; }
                         if (!seenIds.contains(o.id)) {
                             seenIds.add(o.id);
                             if (o.status.equals(Order.ST_NEW) || o.needsAck()) { unreadIds.add(o.id); isNew = true; }
@@ -645,9 +646,12 @@ public class OrderBubbleService extends Service {
                         if (unreadIds.contains(o.id) && !o.status.equals(Order.ST_NEW) && !o.needsAck()) unreadIds.remove(o.id);
                     }
                     for (Order o : got) { String ps = pendingStatus.get(o.id); if (ps != null) o.status = ps; }
+                    // กันออเดอร์ที่ POS เพิ่งย้ายออกจากพรี แล้วคลาวด์ยังไม่ทันอัปเดต: เก็บเวลาเริ่มเตรียมจากในเครื่อง
+                    for (Order o : got) for (Order old : orders) if (old.id.equals(o.id) && !old.isPre() && o.isPre() && pendingStatus.containsKey(o.id)) { o.status = old.status; o.createdAt = old.createdAt; }
                     orders = got;
                     loaded = true;
                     rebuildChildren();
+                    checkPreActivation();
                     if (isNew) {
                         Fx.bounce(mainDisc);
                         boolean anyEdit = false;
@@ -681,7 +685,7 @@ public class OrderBubbleService extends Service {
     private static final int ORANGE = 0xFFF05A28, ORANGE_SOFT = 0xFFFFF1E8, GREEN_C = 0xFF139A4B, GREEN_SOFT = 0xFFE6F8EE;
     private static final int PURPLE = 0xFF7C3AED, PURPLE_SOFT = 0xFFEFE9FF, RED_C = 0xFFEF4444, RED_SOFT = 0xFFFEE2E2, YEL_SOFT = 0xFFFFFBE6, YEL_LINE = 0xFFFDE68A;
 
-    private static final int T_ORDERS = 0, T_ADD = 1, T_HIST = 2, T_HARV = 3, T_SET = 4;
+    private static final int T_ORDERS = 0, T_ADD = 1, T_HIST = 2, T_HARV = 3, T_SET = 4, T_PRE = 5;
     private int tab = T_ORDERS;
     private String selId = null;      // ออเดอร์ที่เลือกดูรายละเอียด
     private int listFilter = 0;       // 0 กำลังทำ / 1 เสร็จแล้ว / 2 ทั้งหมด
@@ -733,7 +737,7 @@ public class OrderBubbleService extends Service {
     private LinearLayout timeBox(Order o, int sizeDp) {
         LinearLayout b = col(this);
         b.setGravity(Gravity.CENTER);
-        boolean done = o.status.equals(Order.ST_DONE);
+        boolean done = o.isClosed();
         b.setBackground(fill(done ? 0xFF9AA1AE : o.tierColor(), 12));
         TextView n = text(this, done ? "✓" : String.valueOf(o.waitedMin()), sizeDp >= 64 ? 20 : 17, true, WHITE);
         n.setGravity(Gravity.CENTER);
@@ -750,6 +754,9 @@ public class OrderBubbleService extends Service {
         boolean unread = unreadIds.contains(o.id);
         if (o.needsAck()) return lchip("แก้ไข", PURPLE_SOFT, PURPLE);
         if (o.status.equals(Order.ST_DONE)) return lchip("เสร็จ", 0xFFEEF0F3, MUTED);
+        if (o.status.equals(Order.ST_CANCEL)) return lchip("ยกเลิก", RED_SOFT, RED_C);
+        if (o.preLate()) return lchip("เลยเวลานัด", RED_SOFT, RED_C);
+        if (o.preAt > 0) return lchip("📅 นัด " + o.preClock(), PURPLE_SOFT, PURPLE);
         if (o.status.equals(Order.ST_NEW) || unread) return lchip("ใหม่", ORANGE_SOFT, ORANGE);
         return lchip("กำลังทำ", GREEN_SOFT, GREEN_C);
     }
@@ -782,6 +789,7 @@ public class OrderBubbleService extends Service {
 
         switch (tab) {
             case T_ADD:  buildAddTab(main); break;
+            case T_PRE:  buildPreTab(main); break;
             case T_HARV: buildHarvestTab(main); break;
             case T_SET:  buildSettingsTab(main); break;
             default:     buildOrdersTab(main); break;
@@ -796,8 +804,8 @@ public class OrderBubbleService extends Service {
         s.setBackgroundColor(CARD);
         s.setGravity(Gravity.CENTER_HORIZONTAL);
         s.setPadding(0, dp(this, 12), 0, dp(this, 12));
-        String[][] items = {{"🧾", "ออเดอร์"}, {"➕", "คีย์เอง"}, {"📋", "ประวัติ"}, {"🦐", "เก็บกุ้ง"}, {"⚙️", "ตั้งค่า"}};
-        int[] ids = {T_ORDERS, T_ADD, T_HIST, T_HARV, T_SET};
+        String[][] items = {{"🧾", "ออเดอร์"}, {"📅", "พรีออเดอร์"}, {"➕", "คีย์เอง"}, {"📋", "ประวัติ"}, {"🦐", "เก็บกุ้ง"}, {"⚙️", "ตั้งค่า"}};
+        int[] ids = {T_ORDERS, T_PRE, T_ADD, T_HIST, T_HARV, T_SET};
         for (int i = 0; i < items.length; i++) {
             final int id = ids[i];
             boolean on = tab == id;
@@ -812,16 +820,16 @@ public class OrderBubbleService extends Service {
             lb.setPadding(0, dp(this, 3), 0, 0);
             it.addView(lb);
             // ป้ายจำนวนยังไม่อ่าน / สัญญาณเก็บกุ้งค้าง
-            int badge = id == T_ORDERS ? unreadIds.size() : id == T_HARV && Cloud.harvestAt > 0 && Cloud.harvestAck < Cloud.harvestAt ? 1 : id == T_SET && Updater.available(this) ? 1 : 0;
+            int badge = id == T_ORDERS ? unreadIds.size() : id == T_PRE ? preTodayCount() : id == T_HARV && Cloud.harvestAt > 0 && Cloud.harvestAck < Cloud.harvestAt ? 1 : id == T_SET && Updater.available(this) ? 1 : 0;
             if (badge > 0) {
-                TextView bd = text(this, id == T_ORDERS ? String.valueOf(badge) : id == T_SET ? "🆕" : "!", 10, true, WHITE);
+                TextView bd = text(this, id == T_ORDERS || id == T_PRE ? String.valueOf(badge) : id == T_SET ? "🆕" : "!", 10, true, WHITE);
                 bd.setGravity(Gravity.CENTER);
-                bd.setBackground(fill(RED_C, 999));
+                bd.setBackground(fill(id == T_PRE ? PURPLE : RED_C, 999));
                 bd.setPadding(dp(this, 6), dp(this, 1), dp(this, 6), dp(this, 1));
                 LinearLayout.LayoutParams bl = lp(WRAP, WRAP); bl.topMargin = dp(this, 2);
                 it.addView(bd, bl);
             }
-            LinearLayout.LayoutParams il = lp(dp(this, 66), dp(this, badge > 0 ? 78 : 62)); il.bottomMargin = dp(this, 6);
+            LinearLayout.LayoutParams il = lp(dp(this, 66), dp(this, badge > 0 ? 72 : 58)); il.bottomMargin = dp(this, 4);
             Fx.onTap(it, () -> {
                 if (id == T_ADD) { addStep = 0; addQuery = ""; }
                 if (id == T_HIST) listFilter = 1; else if (id == T_ORDERS && listFilter == 1) listFilter = 0;
@@ -923,7 +931,7 @@ public class OrderBubbleService extends Service {
     private void buildOrdersTab(LinearLayout main) {
         boolean hist = tab == T_HIST;
         List<Order> act = new ArrayList<>(), done = new ArrayList<>();
-        for (Order o : orders) { if (o.status.equals(Order.ST_DONE)) done.add(o); else act.add(o); }
+        for (Order o : orders) { if (o.isPre()) continue; if (o.isClosed()) done.add(o); else act.add(o); }
         java.util.Collections.sort(act, (a, b) -> Long.compare(a.createdAt, b.createdAt));            // รอนานสุดอยู่บน
         java.util.Collections.sort(done, (a, b) -> Long.compare(Math.max(b.editedAt, b.createdAt), Math.max(a.editedAt, a.createdAt)));
 
@@ -997,7 +1005,7 @@ public class OrderBubbleService extends Service {
             LinearLayout rowv = row(this);
             rowv.setBackground(glass(this, CARD, 14, isSel ? ORANGE : LINE_C));
             rowv.setPadding(dp(this, 12), dp(this, 10), dp(this, 12), dp(this, 10));
-            if (o.status.equals(Order.ST_DONE) && filter != 1) rowv.setAlpha(0.6f);
+            if (o.isClosed() && filter != 1) rowv.setAlpha(0.6f);
             LinearLayout.LayoutParams tl = lp(dp(this, 54), dp(this, 54)); tl.rightMargin = dp(this, 12);
             rowv.addView(timeBox(o, 54), tl);
             LinearLayout info = col(this);
@@ -1015,7 +1023,14 @@ public class OrderBubbleService extends Service {
             LinearLayout.LayoutParams tgl = lp(WRAP, WRAP); tgl.leftMargin = dp(this, 8);
             rowv.addView(tg, tgl);
             final String oid = o.id;
-            Fx.onTap(rowv, () -> { selId = oid; openWorkspace(tab); });
+            Fx.onTap(rowv, () -> {
+                selId = oid;
+                if (unreadIds.contains(oid)) {   // แตะแถวออเดอร์ที่ยังไม่รับ = รับทันที (เสียงหยุด)
+                    Order x = null; for (Order q : orders) if (q.id.equals(oid)) x = q;
+                    if (x != null) { if (x.needsAck()) ackEditNow(x); if (x.status.equals(Order.ST_NEW)) { updateStatus(x, Order.ST_DOING); return; } markRead(oid); }
+                }
+                openWorkspace(tab);
+            });
             LinearLayout.LayoutParams rl = lp(MATCH, WRAP); rl.bottomMargin = dp(this, 8);
             list.addView(rowv, rl);
         }
@@ -1082,8 +1097,8 @@ public class OrderBubbleService extends Service {
         TextView big = text(this, "📍 " + (o.place.isEmpty() ? (o.by.equals("pos") ? "คีย์ที่เครื่อง" : "ออเดอร์") : o.place), 22, true, WHITE);
         big.setSingleLine(true); big.setEllipsize(android.text.TextUtils.TruncateAt.END);
         hc.addView(big);
-        String meta = (o.no.isEmpty() ? "" : "#" + o.no + " · ") + "สั่ง " + clockOf(o.createdAt) + " น. · " + (o.by.equals("pos") ? "คีย์ที่เครื่อง" : "จากมือถือ")
-                + (o.status.equals(Order.ST_DONE) ? " · เสร็จแล้ว" : "");
+        String meta = (o.no.isEmpty() ? "" : "#" + o.no + " · ") + (o.preAt > 0 ? "📅 นัด" + ("ส่ง".equals(o.preType) ? "ส่ง " : "รับ ") + o.preClock() + " น. (" + untilLabel(o.preAt) + ") · เริ่มเตรียม " : "สั่ง ") + clockOf(o.createdAt) + " น. · " + (o.by.equals("pos") ? "คีย์ที่เครื่อง" : "จากมือถือ")
+                + (o.status.equals(Order.ST_DONE) ? " · เสร็จแล้ว" : o.status.equals(Order.ST_CANCEL) ? " · ยกเลิกแล้ว" : "");
         TextView mt = text(this, meta, 13, false, 0xBFFFFFFF);
         mt.setPadding(0, dp(this, 3), 0, 0);
         hc.addView(mt);
@@ -1207,18 +1222,7 @@ public class OrderBubbleService extends Service {
             TextView ack = lbtnColor("✓ รับทราบการแก้ไข", PURPLE, WHITE, 0);
             ack.setTextSize(16); ack.setPadding(dp(this, 12), dp(this, 11), dp(this, 12), dp(this, 11));
             if (urgent) startPulse(ack);
-            Fx.onTap(ack, () -> {
-                final long prevAck = o.ackEditAt;
-                o.ackEditAt = Math.max(o.editedAt, Cloud.now());
-                if (!o.status.equals(Order.ST_NEW)) markRead(o.id);
-                new Thread(() -> {
-                    try { Cloud.ackEdit(OrderBubbleService.this, o.id); }
-                    catch (Exception e) { ui.post(() -> { o.ackEditAt = prevAck; unreadIds.add(o.id); showError("ส่งรับทราบการแก้ไขไม่สำเร็จ — เช็คเน็ตแล้วกดอีกครั้ง"); rebuildChildren(); if (panel != null) openWorkspace(tab); }); }
-                }).start();
-                Toast.makeText(this, "รับทราบการแก้ไขแล้ว", Toast.LENGTH_SHORT).show();
-                rebuildChildren();
-                openWorkspace(tab);
-            });
+            Fx.onTap(ack, () -> { ackEditNow(o); openWorkspace(tab); });
             r2.addView(ack, lpw(1)); nBtn++;
         }
         if (o.status.equals(Order.ST_NEW)) {
@@ -1229,7 +1233,7 @@ public class OrderBubbleService extends Service {
             LinearLayout.LayoutParams dl = lpw(1); if (nBtn > 0) dl.leftMargin = dp(this, 8);
             r2.addView(doing, dl); nBtn++;
         }
-        if (!o.status.equals(Order.ST_DONE)) {
+        if (!o.isClosed()) {
             boolean primaryDone = nBtn == 0;
             TextView done = primaryDone ? lbtnColor("✅ เสร็จแล้ว — ส่งออก", GREEN_C, WHITE, 0) : lbtnColor("✅ เสร็จแล้ว", CARD, GREEN_C, GREEN_C);
             done.setTextSize(16); done.setPadding(dp(this, 12), dp(this, 11), dp(this, 12), dp(this, 11));
@@ -1358,13 +1362,32 @@ public class OrderBubbleService extends Service {
         }
     }
 
-    /** เปิดดูรายละเอียด (จากฟองย่อย) */
+    /** กดรับทราบการแก้ไข (ส่งขึ้นคลาวด์ + เงียบเสียง) */
+    private void ackEditNow(final Order o) {
+        final long prevAck = o.ackEditAt;
+        o.ackEditAt = Math.max(o.editedAt, Cloud.now());
+        if (!o.status.equals(Order.ST_NEW)) markRead(o.id);
+        new Thread(() -> {
+            try { Cloud.ackEdit(OrderBubbleService.this, o.id); }
+            catch (Exception e) { ui.post(() -> { o.ackEditAt = prevAck; unreadIds.add(o.id); showError("ส่งรับทราบการแก้ไขไม่สำเร็จ — เช็คเน็ตแล้วกดอีกครั้ง"); rebuildChildren(); if (panel != null) openWorkspace(tab); }); }
+        }).start();
+        Toast.makeText(this, "รับทราบการแก้ไขแล้ว", Toast.LENGTH_SHORT).show();
+        rebuildChildren();
+    }
+
+    /** เปิดดูรายละเอียด (จากฟองย่อย) — ถ้าเป็นออเดอร์ใหม่/แก้ไขที่ยังไม่รับ ให้ถือว่า "รับ" ทันทีในแตะเดียว (เสียงหยุด) */
     private void openDetail(String id) {
         Order found = null;
         for (Order o : orders) if (o.id.equals(id)) found = o;
         if (found == null) return;
         selId = id;
-        if (found.status.equals(Order.ST_DONE)) { listFilter = 1; openWorkspace(T_HIST); }
+        if (unreadIds.contains(id)) {
+            if (found.needsAck()) ackEditNow(found);
+            if (found.status.equals(Order.ST_NEW)) updateStatus(found, Order.ST_DOING);   // แตะฟอง = รับออเดอร์
+            markRead(id);
+        }
+        if (found.isPre()) { openWorkspace(T_PRE); return; }
+        if (found.isClosed()) { listFilter = 1; openWorkspace(T_HIST); }
         else { if (listFilter == 1) listFilter = 0; openWorkspace(T_ORDERS); }
     }
 
@@ -1748,8 +1771,26 @@ public class OrderBubbleService extends Service {
         outerBody.addView(sv, lp(MATCH, MATCH));
 
         boolean upd = Updater.available(this);
-        int done = 0; for (Order o : orders) if (o.status.equals(Order.ST_DONE)) done++;
+        int done = 0; for (Order o : orders) if (o.isClosed()) done++;
         long age = Cloud.lastOk == 0 ? -1 : (System.currentTimeMillis() - Cloud.lastOk) / 1000;
+
+        // ---- พรีออเดอร์: เริ่มเตรียมล่วงหน้ากี่นาที ----
+        LinearLayout pm = row(this);
+        pm.setBackground(card(14));
+        pm.setPadding(dp(this, 16), dp(this, 12), dp(this, 12), dp(this, 12));
+        LinearLayout pmc = col(this);
+        pmc.addView(text(this, "📅 พรีออเดอร์ — เริ่มเตรียมก่อนนัด", 14.5f, true, TXT));
+        pmc.addView(text(this, "ถึงเวลานี้ POS จะย้ายเข้าคิวปกติ + เสียงเตือน + เริ่มจับเวลา", 12, false, MUTED));
+        pm.addView(pmc, lpw(1));
+        for (int v : new int[]{30, 45, 60, 90}) {
+            final int vv = v;
+            TextView c = lchip(v + " นาที", prepMinDefault() == v ? PURPLE : 0xFFF1F2F5, prepMinDefault() == v ? WHITE : TXT);
+            LinearLayout.LayoutParams cl = lp(WRAP, WRAP); cl.leftMargin = dp(this, 6);
+            Fx.onTap(c, () -> { Cloud.prefs(this).edit().putInt("pre_prep_min", vv).apply(); openWorkspace(T_SET); });
+            pm.addView(c, cl);
+        }
+        LinearLayout.LayoutParams pml = lp(MATCH, WRAP); pml.bottomMargin = dp(this, 14);
+        body.addView(pm, pml);
 
         // ---- อัปเดตแอป (บนสุด) ----
         LinearLayout ub = row(this);
@@ -1821,7 +1862,7 @@ public class OrderBubbleService extends Service {
 
     private void clearDone() {
         final List<Order> done = new ArrayList<>();
-        for (Order o : orders) if (o.status.equals(Order.ST_DONE)) done.add(o);
+        for (Order o : orders) if (o.isClosed()) done.add(o);
         if (done.isEmpty()) { Toast.makeText(this, "ไม่มีออเดอร์ที่เสร็จแล้ว", Toast.LENGTH_SHORT).show(); return; }
         Toast.makeText(this, "⏳ กำลังเก็บเข้าคลัง " + done.size() + " ออเดอร์…", Toast.LENGTH_SHORT).show();
         new Thread(() -> {
@@ -1842,7 +1883,7 @@ public class OrderBubbleService extends Service {
             if (Cloud.ready(OrderBubbleService.this)) {
                 final List<Order> old = new ArrayList<>();
                 long cutoff = Cloud.now() - 12L * 3600000L;
-                for (Order o : orders) if (o.status.equals(Order.ST_DONE) && Math.max(o.createdAt, o.editedAt) < cutoff) old.add(o);
+                for (Order o : orders) if (o.isClosed() && Math.max(o.createdAt, o.editedAt) < cutoff) old.add(o);
                 new Thread(() -> {
                     for (Order o : old) { try { Cloud.archive(OrderBubbleService.this, o); } catch (Exception ignored) {} }
                     try { Cloud.purgeArchive(OrderBubbleService.this, 30); } catch (Exception ignored) {}
@@ -1880,6 +1921,331 @@ public class OrderBubbleService extends Service {
 
         wm.addView(panel, panelParams);
         panel.requestFocus();
+    }
+
+    /* ================= พรีออเดอร์ (สั่งล่วงหน้า) ================= */
+
+    private final java.util.Map<String, Long> preSnooze = new java.util.HashMap<>();   // เลื่อนเวลาเตรียม (id → เวลาที่ให้เช็คใหม่)
+    private boolean prePopup = false;
+    private String prePopupId = null;
+
+    private int prepMinDefault() { return Cloud.prefs(this).getInt("pre_prep_min", 45); }
+
+    private static final String[] TH_DAY = {"อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."};
+    private static final String[] TH_MON = {"ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."};
+
+    private String dayLabel(long serverMs) {
+        java.util.Calendar c = java.util.Calendar.getInstance(); c.setTimeInMillis(serverMs - Cloud.offset);
+        java.util.Calendar t = java.util.Calendar.getInstance();
+        int diff = (int) Math.round((startOfDay(c) - startOfDay(t)) / 86400000.0);
+        String d = TH_DAY[c.get(java.util.Calendar.DAY_OF_WEEK) - 1] + " " + c.get(java.util.Calendar.DAY_OF_MONTH) + " " + TH_MON[c.get(java.util.Calendar.MONTH)];
+        if (diff == 0) return "วันนี้ · " + d;
+        if (diff == 1) return "พรุ่งนี้ · " + d;
+        if (diff < 0) return "เลยมาแล้ว · " + d;
+        return d;
+    }
+    private static long startOfDay(java.util.Calendar c) {
+        java.util.Calendar x = (java.util.Calendar) c.clone();
+        x.set(java.util.Calendar.HOUR_OF_DAY, 0); x.set(java.util.Calendar.MINUTE, 0); x.set(java.util.Calendar.SECOND, 0); x.set(java.util.Calendar.MILLISECOND, 0);
+        return x.getTimeInMillis();
+    }
+    private String untilLabel(long serverMs) {
+        long d = serverMs - Cloud.now();
+        boolean late = d < 0; d = Math.abs(d) / 60000L;
+        String t = d >= 60 ? (d / 60) + " ชม. " + (d % 60 > 0 ? (d % 60) + " น." : "") : d + " น.";
+        return (late ? "เลยเวลา " : "อีก ") + t.trim();
+    }
+
+    private List<Order> preOrders() {
+        List<Order> out = new ArrayList<>();
+        for (Order o : orders) if (o.isPre()) out.add(o);
+        java.util.Collections.sort(out, (a, b) -> Long.compare(a.preAt, b.preAt));
+        return out;
+    }
+    private int preTodayCount() {
+        int n = 0;
+        for (Order o : preOrders()) if (dayLabel(o.preAt).startsWith("วันนี้") || dayLabel(o.preAt).startsWith("เลย")) n++;
+        return n;
+    }
+
+    /** ตรวจทุกรอบ: พรีออเดอร์ไหนถึงเวลาเตรียม (นัด − prepMin) → ย้ายเข้าคิวปกติ + เสียง + ป๊อปอัป */
+    private void checkPreActivation() {
+        if (!Cloud.ready(this)) return;
+        long now = Cloud.now();
+        for (Order o : preOrders()) {
+            long startAt = o.preAt - (o.prepMin > 0 ? o.prepMin : prepMinDefault()) * 60000L;
+            Long sn = preSnooze.get(o.id);
+            if (sn != null && now < sn) continue;
+            if (now < startAt) continue;
+            activatePre(o, false);
+        }
+    }
+
+    /** เริ่มเตรียมพรีออเดอร์ (อัตโนมัติ หรือกด "เริ่มทำตอนนี้") */
+    private void activatePre(final Order o, boolean manual) {
+        preSnooze.remove(o.id);
+        final String st = manual ? Order.ST_DOING : Order.ST_NEW;
+        o.status = st;
+        o.createdAt = Cloud.now();          // นับเวลาตั้งแต่เริ่มเตรียม
+        seenIds.add(o.id);
+        seenEdit.put(o.id, o.editedAt);
+        if (!manual) unreadIds.add(o.id);
+        pendingStatus.put(o.id, st);
+        new Thread(() -> {
+            try { Cloud.activatePre(OrderBubbleService.this, o.id, st); ui.post(() -> pendingStatus.remove(o.id)); }
+            catch (Exception e) { ui.post(() -> { pendingStatus.remove(o.id); showError("ย้ายพรีออเดอร์เข้าคิวไม่สำเร็จ — เช็คเน็ต (จะลองใหม่อัตโนมัติ)"); o.status = Order.ST_PRE; unreadIds.remove(o.id); rebuildChildren(); }); }
+        }).start();
+        rebuildChildren();
+        if (mainDisc != null) Fx.bounce(mainDisc);
+        if (!manual) { Alert.start(this, Alert.PRE); openPrePopup(o); }
+        else { Toast.makeText(this, "เริ่มทำ " + o.place + " แล้ว", Toast.LENGTH_SHORT).show(); selId = o.id; listFilter = 0; openWorkspace(T_ORDERS); }
+    }
+
+    /** ป๊อปอัปม่วง "ถึงเวลาเตรียมพรีออเดอร์" */
+    private void openPrePopup(final Order o) {
+        if (panel != null && tab == T_ADD) {   // กำลังคีย์อยู่ → ไม่ปิดหน้า แค่เตือน
+            Toast.makeText(this, "📅 ถึงเวลาเตรียมพรีออเดอร์ " + o.place + " นัด " + o.preClock() + " — แตะฟองเพื่อรับ", Toast.LENGTH_LONG).show();
+            return;
+        }
+        closePanel();
+        prePopup = true; prePopupId = o.id;
+        panel = col(this);
+        panel.setBackground(glass(this, 0xFF7C3AED, 24, WHITE));
+        panel.setPadding(dp(this, 26), dp(this, 22), dp(this, 26), dp(this, 22));
+        panel.setElevation(dp(this, 20));
+
+        TextView big = text(this, "📅 ถึงเวลาเตรียมพรีออเดอร์!", 28, true, WHITE);
+        big.setGravity(Gravity.CENTER);
+        panel.addView(big, lp(MATCH, WRAP));
+        TextView who = text(this, (o.no.isEmpty() ? "" : "#" + o.no + " ") + o.place + " · นัด" + ("ส่ง".equals(o.preType) ? "ส่ง " : "รับ ") + o.preClock(), 20, true, WHITE);
+        who.setGravity(Gravity.CENTER); who.setPadding(0, dp(this, 8), 0, 0);
+        panel.addView(who, lp(MATCH, WRAP));
+        StringBuilder sb = new StringBuilder();
+        for (String l : o.lines) { String t = l.trim(); if (t.isEmpty() || t.startsWith("ช่องทาง") || t.startsWith("สถานะ") || t.startsWith("นัด") || t.startsWith("มัดจำ")) continue; if (sb.length() > 0) sb.append(" · "); sb.append(t); }
+        if (o.total > 0) sb.append(" · ").append(o.total).append(" บาท");
+        if (o.paidFull) sb.append(" · ชำระครบ"); else if (o.deposit > 0) sb.append(" · คงเหลือ ").append(Math.max(0, o.total - o.deposit));
+        TextView sub = text(this, sb.toString(), 13.5f, false, 0xFFEDE7FF);
+        sub.setGravity(Gravity.CENTER); sub.setPadding(0, dp(this, 4), 0, 0); sub.setMaxLines(3);
+        panel.addView(sub, lp(MATCH, WRAP));
+
+        LinearLayout btns = row(this);
+        TextView snooze = button(this, "⏰ เลื่อนอีก 15 นาที", glass(this, 0x33FFFFFF, 14, WHITE), 15);
+        snooze.setTextColor(WHITE);
+        Fx.onTap(snooze, () -> {
+            // ยังไม่เริ่ม: คืนเป็นพรี แล้วเช็คใหม่ใน 15 นาที
+            o.status = Order.ST_PRE; unreadIds.remove(o.id); pendingStatus.remove(o.id);
+            preSnooze.put(o.id, Cloud.now() + 15 * 60000L);
+            new Thread(() -> { try { Cloud.setStatus(OrderBubbleService.this, o.id, Order.ST_PRE); } catch (Exception ignored) {} }).start();
+            prePopup = false; stopAlertIfIdle(); closePanel(); rebuildChildren();
+            Toast.makeText(this, "เลื่อนไป 15 นาที", Toast.LENGTH_SHORT).show();
+        });
+        btns.addView(snooze, lpw(1));
+        TextView go = button(this, "🔥 รับ — เริ่มทำเลย (หยุดเสียง)", glass(this, WHITE, 14, 0), 17);
+        go.setTextColor(0xFF7C3AED);
+        LinearLayout.LayoutParams gl = lpw(2); gl.leftMargin = dp(this, 10);
+        Fx.onTap(go, () -> { prePopup = false; closePanel(); updateStatus(o, Order.ST_DOING); selId = o.id; listFilter = 0; openWorkspace(T_ORDERS); });
+        btns.addView(go, gl);
+        LinearLayout.LayoutParams bl = lp(MATCH, WRAP); bl.topMargin = dp(this, 18);
+        panel.addView(btns, bl);
+        showPanel();
+    }
+
+    /* ---------- แท็บ พรีออเดอร์ ---------- */
+
+    private void buildPreTab(LinearLayout main) {
+        List<Order> pre = preOrders();
+        int today = preTodayCount();
+        LinearLayout top = topBar(main, "พรีออเดอร์");
+        TextView p1 = lchip("วันนี้ " + today, PURPLE, WHITE);
+        LinearLayout.LayoutParams l1 = lp(WRAP, WRAP); l1.leftMargin = dp(this, 14);
+        top.addView(p1, l1);
+        TextView p2 = lchip("ทั้งหมด " + pre.size(), 0xFFF1F2F5, TXT);
+        LinearLayout.LayoutParams l2 = lp(WRAP, WRAP); l2.leftMargin = dp(this, 8);
+        top.addView(p2, l2);
+        TextView p3 = lchip("เตรียมล่วงหน้า " + prepMinDefault() + " นาที", 0xFFF1F2F5, 0xFF6B7280);
+        LinearLayout.LayoutParams l3 = lp(WRAP, WRAP); l3.leftMargin = dp(this, 8);
+        Fx.onTap(p3, () -> openWorkspace(T_SET));
+        top.addView(p3, l3);
+        topBarEnd(top);
+
+        LinearLayout body = bodyOf(main);
+        final int innerH = bodyH() - dp(this, 32);
+        LinearLayout cols = row(this);
+        cols.setGravity(Gravity.TOP);
+        body.addView(cols, new LinearLayout.LayoutParams(MATCH, innerH));
+
+        LinearLayout left = col(this);
+        DisplayMetrics dm = getResources().getDisplayMetrics();
+        int leftW = Math.min(dp(this, 360), (int) (dm.widthPixels * 0.36f));
+        cols.addView(left, new LinearLayout.LayoutParams(leftW, innerH));
+        ScrollView sv = new ScrollView(this);
+        sv.setVerticalScrollBarEnabled(false);
+        LinearLayout list = col(this);
+        sv.addView(list);
+        left.addView(sv, new LinearLayout.LayoutParams(MATCH, innerH));
+
+        Order sel = null;
+        for (Order o : pre) if (o.id.equals(selId)) sel = o;
+        if (sel == null && !pre.isEmpty()) { sel = pre.get(0); selId = sel.id; }
+
+        if (pre.isEmpty()) {
+            TextView em = text(this, "ยังไม่มีพรีออเดอร์ — มือถือเปิด \"สั่งล่วงหน้า\" ตอนส่งออเดอร์ จะมาโผล่ที่นี่", 13.5f, false, MUTED);
+            em.setPadding(dp(this, 4), dp(this, 10), 0, 0);
+            list.addView(em);
+        }
+        String lastDay = "";
+        for (Order o : pre) {
+            String dl = dayLabel(o.preAt);
+            if (!dl.equals(lastDay)) {
+                lastDay = dl;
+                TextView h = text(this, "📍 " + dl, 12.5f, true, 0xFF5B6270);
+                h.setPadding(dp(this, 2), dp(this, 6), 0, dp(this, 6));
+                list.addView(h);
+            }
+            final boolean isSel = sel != null && o.id.equals(sel.id);
+            long startAt = o.preAt - (o.prepMin > 0 ? o.prepMin : prepMinDefault()) * 60000L;
+            boolean soon = Cloud.now() >= startAt - 30 * 60000L;
+            boolean noDep = o.deposit <= 0 && !o.paidFull;
+            LinearLayout rowv = row(this);
+            rowv.setBackground(glass(this, soon ? 0xFFFFF8F4 : CARD, 14, isSel ? PURPLE : soon ? ORANGE : LINE_C));
+            rowv.setPadding(dp(this, 12), dp(this, 10), dp(this, 12), dp(this, 10));
+            LinearLayout ck = col(this); ck.setGravity(Gravity.CENTER);
+            TextView c1 = text(this, o.preClock(), 19, true, soon ? ORANGE : PURPLE); c1.setGravity(Gravity.CENTER); ck.addView(c1);
+            TextView c2 = text(this, untilLabel(o.preAt), 10, false, MUTED); c2.setGravity(Gravity.CENTER); c2.setSingleLine(true); ck.addView(c2);
+            LinearLayout.LayoutParams ckl = lp(dp(this, 72), WRAP); ckl.rightMargin = dp(this, 10);
+            rowv.addView(ck, ckl);
+            LinearLayout info = col(this);
+            TextView nm = text(this, o.place.isEmpty() ? "ออเดอร์" : o.place, 15.5f, true, TXT);
+            nm.setSingleLine(true); nm.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            info.addView(nm);
+            String dep = o.paidFull ? "ชำระครบ" : o.deposit > 0 ? "มัดจำ " + o.deposit : "ยังไม่มัดจำ";
+            TextView mt = text(this, (o.no.isEmpty() ? "" : "#" + o.no + " · ") + (o.total > 0 ? o.total + " บาท · " : "") + dep + " · " + ("ส่ง".equals(o.preType) ? "ส่ง" : "รับเอง"), 11.5f, false, MUTED);
+            mt.setSingleLine(true); mt.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            mt.setPadding(0, dp(this, 2), 0, 0);
+            info.addView(mt);
+            rowv.addView(info, lpw(1));
+            TextView tg = lchip(soon ? "ใกล้ถึงเวลา" : noDep ? "ยังไม่มัดจำ" : "รอ", soon ? ORANGE_SOFT : noDep ? YEL_SOFT : PURPLE_SOFT, soon ? ORANGE : noDep ? 0xFF92400E : PURPLE);
+            LinearLayout.LayoutParams tgl = lp(WRAP, WRAP); tgl.leftMargin = dp(this, 6);
+            rowv.addView(tg, tgl);
+            final String oid = o.id;
+            Fx.onTap(rowv, () -> { selId = oid; openWorkspace(T_PRE); });
+            LinearLayout.LayoutParams rl = lp(MATCH, WRAP); rl.bottomMargin = dp(this, 8);
+            list.addView(rowv, rl);
+        }
+
+        LinearLayout right = col(this);
+        right.setBackground(card(16));
+        right.setPadding(dp(this, 20), dp(this, 16), dp(this, 20), dp(this, 16));
+        LinearLayout.LayoutParams rl = new LinearLayout.LayoutParams(0, innerH, 1); rl.leftMargin = dp(this, 16);
+        cols.addView(right, rl);
+        if (sel == null) {
+            TextView em = text(this, "เลือกพรีออเดอร์จากรายการด้านซ้าย", 15, false, MUTED);
+            em.setGravity(Gravity.CENTER); right.setGravity(Gravity.CENTER); right.addView(em);
+        } else buildPreDetail(right, sel, innerH);
+    }
+
+    /** รายละเอียดพรีออเดอร์ (หัวม่วง + นับถอยหลัง + แผนเตรียม) */
+    private void buildPreDetail(LinearLayout right, final Order o, int paneH) {
+        right.setPadding(0, 0, 0, 0);
+        right.setClipToOutline(true);
+        LinearLayout h = row(this);
+        h.setBackground(glass(this, PURPLE, 0, 0));
+        h.setPadding(dp(this, 18), dp(this, 12), dp(this, 18), dp(this, 12));
+        LinearLayout hc = col(this);
+        TextView big = text(this, "📍 " + (o.place.isEmpty() ? "ออเดอร์" : o.place), 22, true, WHITE);
+        big.setSingleLine(true); big.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        hc.addView(big);
+        TextView mt = text(this, (o.no.isEmpty() ? "" : "#" + o.no + " · ") + "สั่งเมื่อ " + clockOf(o.createdAt) + " · " + ("ส่ง".equals(o.preType) ? "🛵 ส่ง" : "🏠 รับเอง"), 13, false, 0xBFFFFFFF);
+        mt.setPadding(0, dp(this, 3), 0, 0);
+        hc.addView(mt);
+        h.addView(hc, lpw(1));
+        LinearLayout cd = col(this); cd.setGravity(Gravity.CENTER);
+        cd.setBackground(glass(this, 0x00000000, 12, WHITE));
+        cd.setPadding(dp(this, 12), dp(this, 4), dp(this, 12), dp(this, 4));
+        TextView c1 = text(this, o.preClock(), 22, true, WHITE); c1.setGravity(Gravity.CENTER); cd.addView(c1);
+        TextView c2 = text(this, dayLabel(o.preAt) + " · " + untilLabel(o.preAt), 10, false, WHITE); c2.setGravity(Gravity.CENTER); cd.addView(c2);
+        h.addView(cd, lp(WRAP, WRAP));
+        right.addView(h, lp(MATCH, dp(this, 76)));
+
+        int prep = o.prepMin > 0 ? o.prepMin : prepMinDefault();
+        TextView plan = text(this, "⏱ แผนเตรียม: POS จะย้ายเข้าคิวปกติและเตือนเสียงตอน " + clockOf(o.preAt - prep * 60000L) + " (ก่อนนัด " + prep + " นาที) · กด \"เริ่มทำตอนนี้\" ได้ถ้าอยากทำก่อน", 12.5f, false, 0xFF92400E);
+        plan.setBackground(glass(this, YEL_SOFT, 12, YEL_LINE));
+        plan.setPadding(dp(this, 14), dp(this, 8), dp(this, 14), dp(this, 8));
+        LinearLayout.LayoutParams pl = lp(MATCH, WRAP); pl.leftMargin = dp(this, 18); pl.rightMargin = dp(this, 18); pl.topMargin = dp(this, 8);
+        right.addView(plan, pl);
+
+        ScrollView sv = new ScrollView(this);
+        sv.setVerticalScrollBarEnabled(false);
+        LinearLayout list = col(this);
+        list.setPadding(dp(this, 18), dp(this, 4), dp(this, 18), dp(this, 4));
+        sv.addView(list);
+        int listH = Math.max(dp(this, 70), paneH - dp(this, 76 + 60 + 66 + 58 + 10));
+        right.addView(sv, new LinearLayout.LayoutParams(MATCH, listH));
+        java.util.regex.Pattern linePat = java.util.regex.Pattern.compile("^(.*?)(?:\\s+[xX×]\\s*(\\d+))?\\s+(\\d[\\d,]*)\\s*บาท(?:\\s*\\((.*)\\))?\\s*$");
+        String noteTxt = null; int count = 0;
+        for (String line : o.lines) {
+            String t = line.trim();
+            if (t.isEmpty() || t.startsWith("ช่องทางชำระ") || t.startsWith("สถานะ") || t.startsWith("ยอดรวม") || t.startsWith("นัด") || t.startsWith("มัดจำ")) continue;
+            if (t.startsWith("หมายเหตุ")) { int i = t.indexOf(":"); noteTxt = i > 0 ? t.substring(i + 1).trim() : t; continue; }
+            boolean ship = t.startsWith("ค่าส่ง") || t.startsWith("ส่งฟรี");
+            String name = t, qty = "1", price = "", note = "";
+            java.util.regex.Matcher m = linePat.matcher(t);
+            if (m.find()) { name = m.group(1); if (m.group(2) != null) qty = m.group(2); price = m.group(3); if (m.group(4) != null) note = m.group(4); }
+            else if (ship) price = "0";
+            if (!ship) { try { count += Integer.parseInt(qty); } catch (Exception ignored) {} }
+            list.addView(ticketRow(name, qty, price, note, ship, 0, null, t, false), lp(MATCH, WRAP));
+            list.addView(dashed(), lp(MATCH, dp(this, 2)));
+        }
+        if (noteTxt != null && !noteTxt.isEmpty()) {
+            TextView nb = text(this, "📝 หมายเหตุ: " + noteTxt, 16, true, 0xFF92400E);
+            nb.setBackground(glass(this, YEL_SOFT, 12, YEL_LINE));
+            nb.setPadding(dp(this, 14), dp(this, 10), dp(this, 14), dp(this, 10));
+            LinearLayout.LayoutParams nl = lp(MATCH, WRAP); nl.topMargin = dp(this, 10);
+            list.addView(nb, nl);
+        }
+
+        LinearLayout ft = row(this);
+        ft.setPadding(dp(this, 18), dp(this, 6), dp(this, 18), dp(this, 6));
+        LinearLayout b1 = row(this);
+        b1.setBackground(fill(0xFFF1F2F5, 12));
+        b1.setPadding(dp(this, 14), dp(this, 10), dp(this, 14), dp(this, 10));
+        b1.addView(text(this, "รวม " + count + " รายการ", 14, true, 0xFF5B6270), lpw(1));
+        b1.addView(text(this, o.total > 0 ? o.total + " บาท" : "—", 24, true, TXT));
+        ft.addView(b1, lpw(1));
+        boolean paid = o.paidFull;
+        LinearLayout b2 = row(this);
+        b2.setBackground(glass(this, paid ? GREEN_SOFT : o.deposit > 0 ? YEL_SOFT : RED_SOFT, 12, paid ? GREEN_C : o.deposit > 0 ? YEL_LINE : RED_C));
+        b2.setPadding(dp(this, 14), dp(this, 10), dp(this, 14), dp(this, 10));
+        b2.addView(text(this, paid ? "ชำระครบแล้ว" : o.deposit > 0 ? "มัดจำ " + o.deposit + " · คงเหลือ" : "ยังไม่มัดจำ", 14, true, paid ? GREEN_C : o.deposit > 0 ? 0xFF92400E : RED_C), lpw(1));
+        b2.addView(text(this, paid ? "✅" : o.deposit > 0 ? Math.max(0, o.total - o.deposit) + " บาท" : "⚠️", 20, true, paid ? GREEN_C : o.deposit > 0 ? 0xFF92400E : RED_C));
+        LinearLayout.LayoutParams b2l = lpw(1.2f); b2l.leftMargin = dp(this, 10);
+        ft.addView(b2, b2l);
+        right.addView(ft, lp(MATCH, dp(this, 66)));
+
+        LinearLayout r2 = row(this);
+        r2.setPadding(dp(this, 18), dp(this, 6), dp(this, 18), dp(this, 6));
+        TextView cp = lbtn("📋 คัดลอกที่อยู่", false);
+        cp.setTextSize(13.5f); cp.setPadding(dp(this, 10), dp(this, 9), dp(this, 10), dp(this, 9));
+        final String plc = o.place;
+        Fx.onCopyTap(cp, () -> copy(plc, "คัดลอก: " + plc));
+        r2.addView(cp, lpw(1));
+        TextView dl = lbtn("⏰ เลื่อน +30 นาที", false);
+        dl.setTextSize(13.5f); dl.setPadding(dp(this, 10), dp(this, 9), dp(this, 10), dp(this, 9));
+        LinearLayout.LayoutParams dll = lpw(1); dll.leftMargin = dp(this, 8);
+        Fx.onTap(dl, () -> {
+            final long newAt = o.preAt + 30 * 60000L;
+            o.preAt = newAt;
+            new Thread(() -> { try { Cloud.setPreAt(OrderBubbleService.this, o.id, newAt); } catch (Exception e) { ui.post(() -> showError("เลื่อนเวลาไม่สำเร็จ — เช็คเน็ต")); } }).start();
+            Toast.makeText(this, "เลื่อนนัดเป็น " + o.preClock(), Toast.LENGTH_SHORT).show();
+            openWorkspace(T_PRE);
+        });
+        r2.addView(dl, dll);
+        TextView go = lbtnColor("▶ เริ่มทำตอนนี้ (เข้าคิวปกติ)", PURPLE, WHITE, 0);
+        go.setTextSize(15); go.setPadding(dp(this, 12), dp(this, 11), dp(this, 12), dp(this, 11));
+        LinearLayout.LayoutParams gl = lpw(2); gl.leftMargin = dp(this, 8);
+        Fx.onTap(go, () -> { closePanel(); activatePre(o, true); });
+        r2.addView(go, gl);
+        right.addView(r2, lp(MATCH, dp(this, 58)));
     }
 
     /* ================= แจ้งเตือนเก็บกุ้งจากบ่อ ================= */
@@ -1950,6 +2316,7 @@ public class OrderBubbleService extends Service {
         }
         openOrderId = null;
         harvestPanel = false;
+        prePopup = false;
     }
 
     private void copy(String txt, String msg) {

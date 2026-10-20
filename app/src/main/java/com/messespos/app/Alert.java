@@ -22,7 +22,7 @@ import android.os.Vibrator;
  */
 public class Alert {
 
-    public static final int NEW = 0, EDIT = 1, HARVEST = 2, READY = 3, NET = 4;
+    public static final int NEW = 0, EDIT = 1, HARVEST = 2, READY = 3, NET = 4, PRE = 5;
 
     private static ToneGenerator beeper;
     private static final Handler h = new Handler(Looper.getMainLooper());
@@ -34,7 +34,8 @@ public class Alert {
     public static void start(Context c, int kind) {
         if (ringing) {
             // ลำดับความสำคัญ: HARVEST > EDIT > NEW
-            if (kind > ringKind) ringKind = kind;
+            int a = kind == PRE ? 0 : kind, b = ringKind == PRE ? 0 : ringKind;
+            if (a > b) ringKind = kind;
             return;
         }
         ringing = true;
@@ -86,6 +87,12 @@ public class Alert {
                 case NET:
                     tone(b, ToneGenerator.TONE_CDMA_LOW_SS, 500, 0);
                     vibrate(c, new long[]{0, 300});
+                    break;
+                case PRE:   // พรีออเดอร์ถึงเวลาเตรียม: โทนขึ้น 3 ขั้น (ตี๊-ต๊อ-ติ๊ง) วนจนกว่าจะกดรับ
+                    tone(b, ToneGenerator.TONE_CDMA_LOW_L, 250, 0);
+                    tone(b, ToneGenerator.TONE_CDMA_MED_L, 250, 300);
+                    tone(b, ToneGenerator.TONE_CDMA_HIGH_L, 450, 600);
+                    vibrate(c, new long[]{0, 150, 100, 150, 100, 400});
                     break;
             }
         } catch (Exception e) {
