@@ -1204,7 +1204,7 @@ public class OrderBubbleService extends Service {
         r1.setPadding(dp(this, 18), dp(this, 2), dp(this, 18), 0);
         TextView cpP = lbtn("📋 คัดลอกที่อยู่", false);
         cpP.setTextSize(13.5f); cpP.setPadding(dp(this, 10), dp(this, 9), dp(this, 10), dp(this, 9));
-        if (!o.place.isEmpty()) { final String plc = o.place; Fx.onCopyTap(cpP, () -> copy(plc, "คัดลอก: " + plc)); }
+        if (!o.place.isEmpty()) { final String plc = o.place; Fx.onCopyTap(cpP, () -> { copy(plc, "คัดลอกที่อยู่แล้ว — วางในแอปส่งได้เลย"); ui.postDelayed(this::closePanel, 150); }); }   // คัดลอกแล้วหุบเป็นฟองทันที
         else cpP.setAlpha(0.4f);
         r1.addView(cpP, lpw(1));
         TextView cpA = lbtn("📄 คัดลอกทั้งออเดอร์", false);
@@ -2227,7 +2227,7 @@ public class OrderBubbleService extends Service {
         TextView cp = lbtn("📋 คัดลอกที่อยู่", false);
         cp.setTextSize(13.5f); cp.setPadding(dp(this, 10), dp(this, 9), dp(this, 10), dp(this, 9));
         final String plc = o.place;
-        Fx.onCopyTap(cp, () -> copy(plc, "คัดลอก: " + plc));
+        Fx.onCopyTap(cp, () -> { copy(plc, "คัดลอกที่อยู่แล้ว — วางในแอปส่งได้เลย"); ui.postDelayed(this::closePanel, 150); });
         r2.addView(cp, lpw(1));
         TextView dl = lbtn("⏰ เลื่อน +30 นาที", false);
         dl.setTextSize(13.5f); dl.setPadding(dp(this, 10), dp(this, 9), dp(this, 10), dp(this, 9));
