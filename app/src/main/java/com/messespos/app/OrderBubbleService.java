@@ -1354,7 +1354,11 @@ public class OrderBubbleService extends Service {
                 }
             }).start();
         }
-        Toast.makeText(this, "ออเดอร์ " + (o.no.isEmpty() ? o.place : "#" + o.no) + " → " + status, Toast.LENGTH_SHORT).show();
+        boolean copied = false;
+        if (status.equals(Order.ST_DOING) && !o.place.isEmpty()) {   // รับออเดอร์ = คัดลอกที่อยู่ส่งให้เลย
+            try { ((ClipboardManager) getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newPlainText("pos", o.place)); copied = true; } catch (Exception ignored) {}
+        }
+        Toast.makeText(this, "ออเดอร์ " + (o.no.isEmpty() ? o.place : "#" + o.no) + " → " + status + (copied ? "  ·  📋 คัดลอกที่อยู่ \"" + o.place + "\" แล้ว" : ""), Toast.LENGTH_SHORT).show();
         rebuildChildren();
         if (panel != null) {
             if (status.equals(Order.ST_DONE) && listFilter == 0) selId = null;   // ไปเลือกออเดอร์ถัดไปให้
