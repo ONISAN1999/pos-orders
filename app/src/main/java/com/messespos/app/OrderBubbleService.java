@@ -1255,11 +1255,13 @@ public class OrderBubbleService extends Service {
         rowv.setPadding(dp(this, bg != 0 ? 8 : 0), dp(this, 10), dp(this, bg != 0 ? 8 : 0), dp(this, 10));
         if (bg != 0) rowv.setBackground(fill(bg, 10));
 
-        TextView q = text(this, ship ? "🛵" : qty, ship ? 20 : 26, true, WHITE);
+        TextView q = text(this, ship ? "🛵" : "×" + qty, ship ? 20 : 22, true, WHITE);   // ×2 = จำนวน (ไม่ใช่ลำดับ)
         q.setGravity(Gravity.CENTER);
         q.setBackground(fill(removed ? RED_C : ship ? 0xFF9AA1AE : ORANGE, 12));
         q.setIncludeFontPadding(false);
-        LinearLayout.LayoutParams ql = lp(dp(this, 52), dp(this, 52)); ql.rightMargin = dp(this, 14);
+        q.setPadding(dp(this, 6), 0, dp(this, 6), 0);
+        LinearLayout.LayoutParams ql = lp(WRAP, dp(this, 52)); ql.rightMargin = dp(this, 14);
+        q.setMinWidth(dp(this, 52));
         rowv.addView(q, ql);
 
         int img = name.contains("กุ้งแกะ") ? R.drawable.menu_kae : name.contains("กุ้งผ่า") ? R.drawable.menu_pha : 0;
@@ -1449,7 +1451,10 @@ public class OrderBubbleService extends Service {
         srow.addView(search, lpw(1));
         TextView newBtn = lbtn("➕ พิมพ์ที่อยู่ใหม่", true);
         LinearLayout.LayoutParams nbl = lp(WRAP, WRAP); nbl.leftMargin = dp(this, 10);
-        Fx.onTap(newBtn, () -> { addStep = 2; addQuery = search.getText().toString().trim(); openWorkspace(T_ADD); });
+        Fx.onTap(newBtn, () -> { String t = search.getText().toString().trim(); if (t.isEmpty()) { search.requestFocus(); showIme(search); } else createLocalOrder(t, ""); });
+        newBtn.setText("✓ เริ่มจับเวลา");
+        search.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_DONE);
+        search.setOnEditorActionListener((tv, a, ev) -> { String t = search.getText().toString().trim(); if (!t.isEmpty()) createLocalOrder(t, ""); return true; });   // กด Enter บนแป้นพิมพ์ = เริ่มเลย
         srow.addView(newBtn, nbl);
         body.addView(srow, lp(MATCH, WRAP));
 
@@ -1486,7 +1491,7 @@ public class OrderBubbleService extends Service {
                 c.setTextSize(14);
                 LinearLayout.LayoutParams cl = lp(WRAP, WRAP); cl.rightMargin = dp(this, 8);
                 final String v = qk;
-                Fx.onTap(c, () -> openAddNote(v));
+                Fx.onTap(c, () -> createLocalOrder(v, ""));
                 quick.addView(c, cl);
             }
             LinearLayout.LayoutParams qll = lp(MATCH, WRAP); qll.bottomMargin = dp(this, 12);
@@ -1519,7 +1524,7 @@ public class OrderBubbleService extends Service {
                     s2.setPadding(0, dp(this, 4), 0, 0);
                     cardV.addView(s2);
                     final String v = q;
-                    Fx.onTap(cardV, () -> openAddNote(v));
+                    Fx.onTap(cardV, () -> createLocalOrder(v, ""));
                 } else if (i >= items.size() + (addNew ? 1 : 0)) {
                     cardV.setBackground(glass(this, 0xFFFFF8F4, 14, 0xFFF5B79B));
                     cardV.setGravity(Gravity.CENTER);
@@ -1528,7 +1533,7 @@ public class OrderBubbleService extends Service {
                     TextView s2 = text(this, "แตะเพื่อพิมพ์ที่อยู่", 12, false, MUTED); s2.setGravity(Gravity.CENTER);
                     s2.setPadding(0, dp(this, 4), 0, 0);
                     cardV.addView(s2);
-                    Fx.onTap(cardV, () -> { addStep = 2; addQuery = ""; openWorkspace(T_ADD); });
+                    Fx.onTap(cardV, () -> { search.requestFocus(); showIme(search); });
                 } else {
                     final String p = items.get(i - (addNew ? 1 : 0));
                     cardV.setBackground(card(14));
@@ -1540,7 +1545,7 @@ public class OrderBubbleService extends Service {
                     TextView s2 = text(this, when + (c2 > 0 ? " · " + c2 + " ครั้ง" : ""), 12, false, MUTED);
                     s2.setPadding(0, dp(this, 4), 0, 0);
                     cardV.addView(s2);
-                    Fx.onTap(cardV, () -> openAddNote(p));
+                    Fx.onTap(cardV, () -> createLocalOrder(p, ""));
                 }
                 LinearLayout.LayoutParams cl = lpw(1);
                 if (k % cols != 0) cl.leftMargin = dp(this, 12);
@@ -1568,7 +1573,7 @@ public class OrderBubbleService extends Service {
         Fx.onTap(cancel, this::closePanel);
         f.addView(cancel);
         View sp = new View(this); f.addView(sp, lpw(1));
-        TextView tip = text(this, "แตะการ์ดที่อยู่ → ใส่โน้ต → ยืนยัน ระบบจับเวลาให้ทันที", 12.5f, false, MUTED);
+        TextView tip = text(this, "แตะการ์ด หรือพิมพ์ชื่อแล้วกด Enter = เริ่มจับเวลาทันที (ใส่โน้ตทีหลังได้ในใบสั่งครัว)", 12.5f, false, MUTED);
         f.addView(tip);
     }
 
@@ -1674,8 +1679,15 @@ public class OrderBubbleService extends Service {
         View sp = new View(this); f.addView(sp, lpw(1));
         TextView go = lbtn("✓  ยืนยัน — เริ่มจับเวลา", true);
         go.setTextSize(17);
-        Fx.onTap(go, () -> {
-            final String n = note.getText().toString().trim();
+        Fx.onTap(go, () -> createLocalOrder(place, note.getText().toString().trim()));
+        f.addView(go);
+        showIme(note);
+    }
+
+    /** สร้างออเดอร์คีย์หน้าเครื่องทันที (ชื่อที่อยู่อย่างเดียวก็พอ) */
+    private void createLocalOrder(final String place, final String n) {
+        if (place == null || place.trim().isEmpty()) { Toast.makeText(this, "พิมพ์ชื่อที่อยู่ก่อน", Toast.LENGTH_SHORT).show(); return; }
+        {
             final Order o = new Order();
             o.place = place;
             o.lines.add("คีย์ที่เครื่อง POS");
@@ -1700,15 +1712,13 @@ public class OrderBubbleService extends Service {
                         ui.postDelayed(() -> { if (panel != null && tab == T_ORDERS) openWorkspace(T_ORDERS); }, 1200);
                     } else {
                         // บันทึกไม่สำเร็จ → กลับไปหน้าโน้ตพร้อมข้อมูลเดิม ให้กดยืนยันใหม่
-                        addPlace = place; addStep = 1;
-                        showError("บันทึกออเดอร์ \"" + place + "\" ไม่สำเร็จ — เช็คเน็ตแล้วกดยืนยันอีกครั้ง (" + ferr + ")");
+                        addPlace = place; addStep = 0; addQuery = place;
+                        showError("บันทึกออเดอร์ \"" + place + "\" ไม่สำเร็จ — เช็คเน็ตแล้วกด Enter อีกครั้ง (" + ferr + ")");
                         openWorkspace(T_ADD);
                     }
                 });
             }).start();
-        });
-        f.addView(go);
-        showIme(note);
+        }
     }
 
     /* ---------- แท็บ เก็บกุ้ง ---------- */
