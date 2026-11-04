@@ -1,1 +1,1 @@
-{"versionCode":27,"versionName":"4.3","build":83,"apk":"https://raw.githubusercontent.com/ONISAN1999/pos-orders/main/dist/POSOrders.apk","notes":"กดรับออเดอร์ = คัดลอกที่อยู่ส่งให้อัตโนมัติ (แตะฟอง/แถว/ปุ่มรับ/รับพรีออเดอร์)","at":"2026-10-22T05:59:16Z"}
+{"versionCode":29,"versionName":"4.5","build":86,"apk":"https://raw.githubusercontent.com/ONISAN1999/pos-orders/main/dist/POSOrders.apk","notes":"คีย์เองขั้นเดียว: พิมพ์ชื่อที่อยู่แล้วกด Enter หรือแตะการ์ด = เริ่มจับเวลาทันที · กล่องจำนวน ×2","at":"2026-11-04T03:20:05Z"}
